@@ -1049,6 +1049,24 @@ def get_session_status(session_id):
         if not session:
             return jsonify({'error': 'Session not found'}), 404
         
+        # Generate signed URLs for uploaded files
+        uploaded_files_with_urls = {}
+        if session.get('uploaded_files'):
+            gcs = get_gcs_handler()
+            for key, file_info in session['uploaded_files'].items():
+                gcs_path = file_info.get('gcs_path')
+                if gcs_path:
+                    signed_url = gcs.generate_signed_url(
+                        gcs_path,
+                        expires_in_seconds=3600,
+                        response_disposition=f'attachment; filename="{file_info.get("original_filename", key)}"',
+                        response_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
+                    uploaded_files_with_urls[key] = {
+                        **file_info,
+                        'download_url': signed_url
+                    }
+        
         response_data = {
             'session_id': session_id,
             'status': session['status'],
@@ -1057,6 +1075,7 @@ def get_session_status(session_id):
             'has_error': session['error_info']['has_error'],
             'error_message': session['error_info']['error_message'],
             'input_files_count': len(session['input_files']),
+            'uploaded_files': uploaded_files_with_urls,
             'output_file': session['output_file'],
             'boq_file': session.get('boq_file'),
             'zip_available': True,  # Add this
@@ -1568,7 +1587,7 @@ def root():
             'session_list': {
                 'method': 'GET',
                 'path': '/api/sessions',
-                'description': 'Get list of all sessions (paginated)',
+                'description': 'Get list of all sessions (paginated) with GCS download URLs for uploaded files',
                 'query_parameters': {
                     'page': 'integer (optional, default: 1)',
                     'limit': 'integer (optional, default: 10, max: 100)'

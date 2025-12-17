@@ -6,6 +6,12 @@ import os
 from datetime import datetime
 import traceback
 from dotenv import load_dotenv
+import sys
+from pathlib import Path
+
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src' / 'utils'))
+from gcs_utils import get_gcs_handler
 
 
 
@@ -168,8 +174,11 @@ class SessionManager:
         Returns:
             List of sessions and total count
         """
-        sessions_cursor = self.sessions.find().sort(sort_by, sort_order)
-    
+        sessions_cursor = self.sessions.find().sort(sort_by, sort_order).skip(skip).limit(limit)
+        
+        # Initialize GCS handler for generating URLs
+        gcs = get_gcs_handler()
+        
         sessions = []
         for session in sessions_cursor:
             # Count files from uploaded_files instead of input_files
@@ -178,6 +187,26 @@ class SessionManager:
             
             # Use uploaded_files count if available, otherwise fall back to input_files
             files_count = uploaded_files_count if uploaded_files_count > 0 else input_files_count
+            
+            # Process uploaded files to include GCS URLs
+            uploaded_files_with_urls = {}
+            if session.get('uploaded_files'):
+                for file_key, file_info in session['uploaded_files'].items():
+                    file_data = dict(file_info)  # Copy the file info
+                    if 'gcs_path' in file_info:
+                        try:
+                            # Generate signed URL for the file
+                            signed_url = gcs.generate_signed_url(
+                                file_info['gcs_path'],
+                                expires_in_seconds=3600,  # 1 hour
+                                response_disposition=f'attachment; filename="{file_info.get("filename", "file.xlsx")}"',
+                                response_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                            )
+                            file_data['gcs_url'] = signed_url
+                        except Exception as e:
+                            # If URL generation fails, continue without URL
+                            file_data['gcs_url'] = None
+                    uploaded_files_with_urls[file_key] = file_data
             
             # Convert MongoDB document to JSON-serializable format
             session_data = {
@@ -191,7 +220,7 @@ class SessionManager:
                 'output_file': session.get('output_file'),
                 'boq_file': session.get('boq_file'),
                 'zip_download_count': session.get('zip_download_count', 0),
-                'uploaded_files': session.get('uploaded_files', {})
+                'uploaded_files': uploaded_files_with_urls  # Use the processed files with URLs
             }
             
             # Add processing info if available
@@ -204,7 +233,7 @@ class SessionManager:
             
             sessions.append(session_data)
         
-        return sessions, len(sessions)
+        return sessions, self.sessions.count_documents({})
     
     def increment_download_count(self, session_id):
         """Increment ZIP download count"""
