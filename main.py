@@ -420,6 +420,206 @@ def health_check():
             'traceback': traceback.format_exc()
         }), 500
 
+@app.route('/api/test-gcs-connection', methods=['GET'])
+def test_gcs_connection_api():
+    """Test GCS connection and return detailed status"""
+    try:
+        print("\n" + "="*80)
+        print("TESTING GCS CONNECTION - API ENDPOINT")
+        print("="*80)
+        
+        # Get GCS configuration from environment
+        bucket_name = os.getenv('GCS_BUCKET_NAME')
+        project_id = os.getenv('GCS_PROJECT_ID')
+        credentials_path = os.getenv('GCS_CREDENTIALS_PATH')
+        
+        # Check if environment variables are set
+        if not bucket_name:
+            return jsonify({
+                'status': 'error',
+                'timestamp': datetime.now().isoformat(),
+                'message': 'GCS_BUCKET_NAME not set in environment variables',
+                'configuration': {
+                    'bucket_name': None,
+                    'project_id': project_id,
+                    'credentials_path': credentials_path
+                }
+            }), 400
+        
+        if not project_id:
+            return jsonify({
+                'status': 'error',
+                'timestamp': datetime.now().isoformat(),
+                'message': 'GCS_PROJECT_ID not set in environment variables',
+                'configuration': {
+                    'bucket_name': bucket_name,
+                    'project_id': None,
+                    'credentials_path': credentials_path
+                }
+            }), 400
+        
+        if not credentials_path:
+            return jsonify({
+                'status': 'error',
+                'timestamp': datetime.now().isoformat(),
+                'message': 'GCS_CREDENTIALS_PATH not set in environment variables',
+                'configuration': {
+                    'bucket_name': bucket_name,
+                    'project_id': project_id,
+                    'credentials_path': None
+                }
+            }), 400
+        
+        # Check if credentials file exists
+        if not os.path.exists(credentials_path):
+            return jsonify({
+                'status': 'error',
+                'timestamp': datetime.now().isoformat(),
+                'message': f'Credentials file not found at: {credentials_path}',
+                'configuration': {
+                    'bucket_name': bucket_name,
+                    'project_id': project_id,
+                    'credentials_path': credentials_path,
+                    'credentials_file_exists': False
+                }
+            }), 400
+        
+        print(f"✓ Bucket Name: {bucket_name}")
+        print(f"✓ Project ID: {project_id}")
+        print(f"✓ Credentials Path: {credentials_path}")
+        print(f"✓ Credentials file exists: True")
+        
+        # Initialize GCS handler
+        print("\n[TEST 1] Initializing GCS client...")
+        gcs = get_gcs_handler()
+        print("✓ GCS client initialized successfully")
+        
+        # Test 2: Check if bucket exists and is accessible
+        print("\n[TEST 2] Checking bucket access...")
+        if gcs.bucket.exists():
+            print(f"✓ SUCCESS: Connected to bucket '{bucket_name}'")
+        else:
+            return jsonify({
+                'status': 'error',
+                'timestamp': datetime.now().isoformat(),
+                'message': f'Bucket "{bucket_name}" does not exist or is not accessible',
+                'configuration': {
+                    'bucket_name': bucket_name,
+                    'project_id': project_id,
+                    'credentials_path': credentials_path,
+                    'credentials_file_exists': True
+                }
+            }), 500
+        
+        # Test 3: Check read permissions
+        print("\n[TEST 3] Checking read permissions...")
+        try:
+            blobs = list(gcs.bucket.list_blobs(max_results=5))
+            print(f"✓ SUCCESS: Can read from bucket (found {len(blobs)} objects)")
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'timestamp': datetime.now().isoformat(),
+                'message': f'Cannot read from bucket: {str(e)}',
+                'configuration': {
+                    'bucket_name': bucket_name,
+                    'project_id': project_id,
+                    'credentials_path': credentials_path,
+                    'credentials_file_exists': True
+                }
+            }), 500
+        
+        # Test 4: Check write permissions (create and delete a test file)
+        print("\n[TEST 4] Checking write permissions...")
+        try:
+            test_file_path = '_test_connection.txt'
+            test_blob = gcs.bucket.blob(test_file_path)
+            test_content = f'Connection test at {datetime.now()}'
+            test_blob.upload_from_string(test_content)
+            print(f"✓ SUCCESS: Can write to bucket")
+            
+            # Clean up test file
+            test_blob.delete()
+            print(f"✓ SUCCESS: Can delete from bucket")
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'timestamp': datetime.now().isoformat(),
+                'message': f'Cannot write/delete from bucket: {str(e)}',
+                'configuration': {
+                    'bucket_name': bucket_name,
+                    'project_id': project_id,
+                    'credentials_path': credentials_path,
+                    'credentials_file_exists': True
+                }
+            }), 500
+        
+        # Test 5: Check session directory structure
+        print("\n[TEST 5] Checking session directory structure...")
+        try:
+            test_session_id = '_test_session'
+            test_paths = [
+                f'sessions/{test_session_id}/data/test.txt',
+                f'sessions/{test_session_id}/output/test.txt'
+            ]
+            
+            for test_path in test_paths:
+                blob = gcs.bucket.blob(test_path)
+                blob.upload_from_string('test')
+                blob.delete()
+            
+            print(f"✓ SUCCESS: Can create/delete in session directories")
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'timestamp': datetime.now().isoformat(),
+                'message': f'Cannot manage session directories: {str(e)}',
+                'configuration': {
+                    'bucket_name': bucket_name,
+                    'project_id': project_id,
+                    'credentials_path': credentials_path,
+                    'credentials_file_exists': True
+                }
+            }), 500
+        
+        print("\n" + "="*80)
+        print("GCS CONNECTION TEST: ALL TESTS PASSED ✓")
+        print("="*80)
+        
+        return jsonify({
+            'status': 'success',
+            'timestamp': datetime.now().isoformat(),
+            'message': 'GCS connection successful',
+            'configuration': {
+                'bucket_name': bucket_name,
+                'project_id': project_id,
+                'credentials_path': credentials_path,
+                'credentials_file_exists': True,
+                'bucket_accessible': True,
+                'read_permission': True,
+                'write_permission': True,
+                'session_directories_permission': True
+            },
+            'tests': [
+                'GCS client initialization: PASSED',
+                'Bucket access: PASSED',
+                'Read permissions: PASSED',
+                'Write permissions: PASSED',
+                'Session directory structure: PASSED'
+            ]
+        }), 200
+        
+    except Exception as e:
+        error_msg = f'GCS connection test failed: {str(e)}'
+        print(f'\n✗ ERROR: {error_msg}')
+        print(traceback.format_exc())
+        return jsonify({
+            'status': 'error',
+            'timestamp': datetime.now().isoformat(),
+            'message': error_msg,
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/api/upload-files', methods=['POST'])
 def upload_files():
     """
@@ -1277,6 +1477,12 @@ def root():
                 },
                 'usage': 'curl -X POST -H "Content-Type: application/json" -d \'{"session_id": "your_session_id"}\' http://localhost:5000/api/execute-calculation-sync-merged'
             },
+            'test_gcs_connection': {
+                'method': 'GET',
+                'path': '/api/test-gcs-connection',
+                'description': 'Test GCS connection and permissions',
+                'usage': 'curl -X GET http://localhost:5000/api/test-gcs-connection'
+            },
             'session_list': {
                 'method': 'GET',
                 'path': '/api/sessions',
@@ -1412,6 +1618,7 @@ if __name__ == '__main__':
     print("  POST /api/execute-calculation-merged       - Start calculation (main_carriageway_and_boq)")
     print("  POST /api/execute-calculation-sync         - Start calculation (main_carriageway only, synchronous)")
     print("  POST /api/execute-calculation-sync-merged - Start calculation (main_carriageway_and_boq, synchronous)")
+    print("  GET  /api/test-gcs-connection              - Test GCS connection and permissions")
     print("  GET  /api/session-status/<id>             - Check session status")
     print("  GET  /api/download-file/<id>              - Download result")
     print("  GET  /api/download-boq/<id>               - Download BOQ file")
