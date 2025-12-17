@@ -1155,6 +1155,86 @@ def download_file(session_id):
             'message': str(e)
         }), 500
     
+@app.route('/api/preview-file/<session_id>', methods=['GET'])
+def preview_file(session_id):
+    """
+    Get a preview URL for the generated output file from GCS
+    Returns a signed URL that opens the file inline in the browser for preview
+    """
+    try:
+        session_manager = SessionManager()
+        session = session_manager.get_session(session_id)
+        
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        if session.get('status') != 'completed':
+            return jsonify({
+                'error': 'File not ready',
+                'message': 'Processing not completed yet',
+                'current_status': session.get('status')
+            }), 400
+        
+        # Initialize GCS
+        gcs = get_gcs_handler()
+        
+        # Check for both files, prioritize main_carriageway_and_boq if both exist
+        merged_filename = f"{session_id}_main_carriageway_and_boq.xlsx"
+        single_filename = f"{session_id}_main_carriageway.xlsx"
+        
+        merged_gcs_path = gcs.get_gcs_path(session_id, merged_filename, 'output')
+        single_gcs_path = gcs.get_gcs_path(session_id, single_filename, 'output')
+        
+        # Determine which file to preview
+        output_filename = None
+        gcs_path = None
+        
+        if gcs.file_exists(merged_gcs_path):
+            output_filename = merged_filename
+            gcs_path = merged_gcs_path
+        elif gcs.file_exists(single_gcs_path):
+            output_filename = single_filename
+            gcs_path = single_gcs_path
+        else:
+            return jsonify({
+                'error': 'File not found in GCS',
+                'message': 'Neither main_carriageway.xlsx nor main_carriageway_and_boq.xlsx found',
+                'checked_paths': {
+                    'merged': merged_gcs_path,
+                    'single': single_gcs_path
+                }
+            }), 404
+        
+        # Generate signed URL for inline preview from GCS
+        # URL expires in 1 hour (3600 seconds)
+        response_disposition = f'inline; filename="{output_filename}"'
+        response_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        
+        signed_url = gcs.generate_signed_url(
+            gcs_path,
+            expires_in_seconds=3600,
+            response_disposition=response_disposition,
+            response_type=response_type
+        )
+        
+        # Return signed URL as JSON response
+        return jsonify({
+            'status': 'success',
+            'preview_url': signed_url,
+            'filename': output_filename,
+            'expires_in_seconds': 3600,
+            'message': 'Preview URL generated successfully'
+        }), 200
+    
+    except Exception as e:
+        print(f"Error generating preview URL: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({
+            'error': 'Preview URL generation failed',
+            'message': str(e)
+        }), 500
+
+
 @app.route('/api/download-boq/<session_id>', methods=['GET'])
 def download_boq(session_id):
     """Download BOQ file for session"""
@@ -1308,6 +1388,7 @@ def get_output_file_paths(session_id):
                 'gcs_path': merged_gcs_path,
                 'gcs_uri': f"gs://{gcs.bucket.name}/{merged_gcs_path}",
                 'download_url': f"/api/download-file/{session_id}",
+                'preview_url': f"/api/preview-file/{session_id}",
                 'file_type': 'main_output_merged'
             }
         
@@ -1321,6 +1402,7 @@ def get_output_file_paths(session_id):
                 'gcs_path': single_gcs_path,
                 'gcs_uri': f"gs://{gcs.bucket.name}/{single_gcs_path}",
                 'download_url': f"/api/download-file/{session_id}",
+                'preview_url': f"/api/preview-file/{session_id}",
                 'file_type': 'main_output_single'
             }
         
@@ -1512,6 +1594,19 @@ def root():
                 },
                 'usage': 'curl -X GET http://localhost:5000/api/download-file/your_session_id'
             },
+            'preview_file': {
+                'method': 'GET',
+                'path': '/api/preview-file/<session_id>',
+                'description': 'Get signed URL for previewing the generated file inline in browser (only available after completion). Returns JSON with preview_url that expires in 1 hour.',
+                'response': {
+                    'status': 'success',
+                    'preview_url': 'https://storage.googleapis.com/... (signed URL)',
+                    'filename': 'session_id_main_carriageway_and_boq.xlsx',
+                    'expires_in_seconds': 3600,
+                    'message': 'Preview URL generated successfully'
+                },
+                'usage': 'curl -X GET http://localhost:5000/api/preview-file/your_session_id'
+            },
             'download_boq_file': {
                 'method': 'GET',
                 'path': '/api/download-boq/<session_id>',
@@ -1537,7 +1632,7 @@ def root():
                 '2. Get session_id from upload response',
                 '3. Start calculation using /api/execute-calculation (main_carriageway only) or /api/execute-calculation-merged (main_carriageway_and_boq) with session_id',
                 '4. Monitor progress using /api/session-status/<session_id>',
-                '5. Download result using /api/download-file/<session_id> when status is "completed"',
+                '5. Preview result using /api/preview-file/<session_id> or download using /api/download-file/<session_id> when status is "completed"',
                 '6. Download BOQ file using /api/download-boq/<session_id> (only for merged calculation)',
                 '7. Download session ZIP file using /api/download-session/<session_id>'
             ]
@@ -1620,6 +1715,7 @@ if __name__ == '__main__':
     print("  POST /api/execute-calculation-sync-merged - Start calculation (main_carriageway_and_boq, synchronous)")
     print("  GET  /api/test-gcs-connection              - Test GCS connection and permissions")
     print("  GET  /api/session-status/<id>             - Check session status")
+    print("  GET  /api/preview-file/<id>               - Get preview URL for result")
     print("  GET  /api/download-file/<id>              - Download result")
     print("  GET  /api/download-boq/<id>               - Download BOQ file")
     print("  GET  /api/download-session/<id>           - Download session ZIP file")
