@@ -6,6 +6,7 @@ on:
       - backend_v2
       - implement_progress
       - efficient_gcs
+      - round_float
   workflow_dispatch:
 
 permissions:
