@@ -1059,7 +1059,7 @@ def get_session_status(session_id):
                     signed_url = gcs.generate_signed_url(
                         gcs_path,
                         expires_in_seconds=3600,
-                        response_disposition=f'attachment; filename="{file_info.get("original_filename", key)}"',
+                        response_disposition=f'attachment; filename="{file_info.get("filename", key)}"',
                         response_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                     )
                     uploaded_files_with_urls[key] = {
