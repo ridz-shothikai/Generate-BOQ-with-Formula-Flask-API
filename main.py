@@ -1515,6 +1515,63 @@ def get_all_sessions():
             'traceback': traceback.format_exc()
         }), 500
 
+@app.route('/api/analytics', methods=['GET'])
+def get_analytics():
+    """Get analytics for BOQ reports - total counts by status"""
+    try:
+        session_manager = SessionManager()
+        
+        # Use MongoDB aggregation for efficient counting
+        pipeline = [
+            {
+                '$group': {
+                    '_id': '$status',
+                    'count': {'$sum': 1}
+                }
+            }
+        ]
+        
+        # Execute aggregation
+        aggregation_result = list(session_manager.sessions.aggregate(pipeline))
+        
+        # Initialize counts
+        status_counts = {
+            'total_reports_generated': 0,  # completed
+            'total_reports_processing': 0,  # processing
+            'total_reports_uploaded': 0,    # uploaded
+            'total_reports_error': 0,       # error
+            'total_sessions': 0
+        }
+        
+        # Process aggregation results
+        for result in aggregation_result:
+            status = result['_id']
+            count = result['count']
+            status_counts['total_sessions'] += count
+            
+            if status == 'completed':
+                status_counts['total_reports_generated'] = count
+            elif status == 'processing':
+                status_counts['total_reports_processing'] = count
+            elif status == 'uploaded':
+                status_counts['total_reports_uploaded'] = count
+            elif status == 'error':
+                status_counts['total_reports_error'] = count
+        
+        return jsonify({
+            'analytics': status_counts,
+            'timestamp': datetime.now().isoformat(),
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in get_analytics: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({
+            'error': 'Failed to fetch analytics',
+            'message': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/', methods=['GET'])
 @app.route('/api', methods=['GET'])
 def root():
@@ -1643,6 +1700,23 @@ def root():
                 'path': '/api/output-file-paths/<session_id>',
                 'description': 'Get output file paths and download URLs for a session',
                 'usage': 'curl -X GET http://localhost:5000/api/output-file-paths/your_session_id'
+            },
+            'analytics': {
+                'method': 'GET',
+                'path': '/api/analytics',
+                'description': 'Get analytics for BOQ reports - total counts by status',
+                'response': {
+                    'analytics': {
+                        'total_reports_generated': 5,
+                        'total_reports_processing': 2,
+                        'total_reports_uploaded': 1,
+                        'total_reports_error': 0,
+                        'total_sessions': 8
+                    },
+                    'timestamp': '2025-12-18T10:30:00.000000',
+                    'description': 'BOQ report analytics - session counts by status'
+                },
+                'usage': 'curl -X GET http://localhost:5000/api/analytics'
             }
         },
         'workflow': {
@@ -1739,6 +1813,7 @@ if __name__ == '__main__':
     print("  GET  /api/download-boq/<id>               - Download BOQ file")
     print("  GET  /api/download-session/<id>           - Download session ZIP file")
     print("  GET  /api/output-file-paths/<id>          - Get output file paths")
+    print("  GET  /api/analytics                       - Get BOQ report analytics")
     print("="*80 + "\n")
     
     # Run Flask app
