@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import traceback
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 import zipfile
 from dotenv import load_dotenv
 import tempfile
@@ -127,7 +127,7 @@ def test_gcs_connection():
         try:
             test_file_path = '_test_connection.txt'
             test_blob = gcs.bucket.blob(test_file_path)
-            test_content = f'Connection test at {datetime.now()}'
+            test_content = f'Connection test at {datetime.now(timezone.utc).isoformat()}'
             test_blob.upload_from_string(test_content)
             print(f"✓ SUCCESS: Can write to bucket")
             
@@ -212,7 +212,7 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
             'percentage': 0,
             'message': processing_steps[0]['message'],
             'completed_steps': 0,
-            'started_at': datetime.now()
+            'started_at': datetime.now(timezone.utc).isoformat()
         })
         
         # Change to project root to ensure relative imports work
@@ -245,7 +245,7 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
                         'percentage': int(((step_num - 1) / total_steps) * 100),  # Previous step completed
                         'message': step_message,
                         'completed_steps': step_num - 1,
-                        'last_completed_at': datetime.now()
+                        'last_completed_at': datetime.now(timezone.utc).isoformat()
                     })
                 
                 # Determine script path based on name
@@ -283,7 +283,7 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
                     'percentage': progress_percentage,
                     'message': completion_message,
                     'completed_steps': step_num,
-                    'last_completed_at': datetime.now()
+                    'last_completed_at': datetime.now(timezone.utc).isoformat()
                 })
                 
                 print(f"✓ Completed step {step_num}/{total_steps}: {step_name}")
@@ -296,14 +296,14 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
                 'percentage': 100,
                 'message': 'All calculations completed successfully!',
                 'completed_steps': total_steps,
-                'completed_at': datetime.now()
+                'completed_at': datetime.now(timezone.utc).isoformat()
             })
             
             # Calculate execution time and update session
             session = session_manager.get_session(session_id)
             if session and session['processing_info']['started_at']:
-                started_at = session['processing_info']['started_at']
-                execution_time = (datetime.now() - started_at).total_seconds()
+                started_at = datetime.fromisoformat(session['processing_info']['started_at'])
+                execution_time = (datetime.now(timezone.utc) - started_at).total_seconds()
                 
                 # Upload final file to GCS (single upload after all processing)
                 if session_output_file.exists():
@@ -318,7 +318,7 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
                 output_info = {
                     'filename': session_output_file.name,
                     'file_path': str(session_output_file),
-                    'generated_at': datetime.now(),
+                    'generated_at': datetime.now(timezone.utc).isoformat(),
                     'download_count': 0
                 }
                 
@@ -335,7 +335,7 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
                     boq_info = {
                         'filename': f"{session_id}_BOQ.xlsx",
                         'file_path': str(boq_output_path),
-                        'generated_at': datetime.now(),
+                        'generated_at': datetime.now(timezone.utc).isoformat(),
                         'download_count': 0
                     }
                     session_manager.sessions.update_one(
@@ -385,7 +385,7 @@ def health_check():
         
         return jsonify({
             'status': 'healthy' if all_healthy else 'degraded',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'checks': {
                 'template_file': {
                     'status': 'ok' if template_exists else 'error',
@@ -414,7 +414,7 @@ def health_check():
         # Catch any unexpected errors during health check
         return jsonify({
             'status': 'error',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'error': 'Health check failed',
             'message': str(e),
             'traceback': traceback.format_exc()
@@ -437,7 +437,7 @@ def test_gcs_connection_api():
         if not bucket_name:
             return jsonify({
                 'status': 'error',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'message': 'GCS_BUCKET_NAME not set in environment variables',
                 'configuration': {
                     'bucket_name': None,
@@ -449,7 +449,7 @@ def test_gcs_connection_api():
         if not project_id:
             return jsonify({
                 'status': 'error',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'message': 'GCS_PROJECT_ID not set in environment variables',
                 'configuration': {
                     'bucket_name': bucket_name,
@@ -461,7 +461,7 @@ def test_gcs_connection_api():
         if not credentials_path:
             return jsonify({
                 'status': 'error',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'message': 'GCS_CREDENTIALS_PATH not set in environment variables',
                 'configuration': {
                     'bucket_name': bucket_name,
@@ -474,7 +474,7 @@ def test_gcs_connection_api():
         if not os.path.exists(credentials_path):
             return jsonify({
                 'status': 'error',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'message': f'Credentials file not found at: {credentials_path}',
                 'configuration': {
                     'bucket_name': bucket_name,
@@ -501,7 +501,7 @@ def test_gcs_connection_api():
         else:
             return jsonify({
                 'status': 'error',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'message': f'Bucket "{bucket_name}" does not exist or is not accessible',
                 'configuration': {
                     'bucket_name': bucket_name,
@@ -519,7 +519,7 @@ def test_gcs_connection_api():
         except Exception as e:
             return jsonify({
                 'status': 'error',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'message': f'Cannot read from bucket: {str(e)}',
                 'configuration': {
                     'bucket_name': bucket_name,
@@ -534,7 +534,7 @@ def test_gcs_connection_api():
         try:
             test_file_path = '_test_connection.txt'
             test_blob = gcs.bucket.blob(test_file_path)
-            test_content = f'Connection test at {datetime.now()}'
+            test_content = f'Connection test at {datetime.now(timezone.utc).isoformat()}'
             test_blob.upload_from_string(test_content)
             print(f"✓ SUCCESS: Can write to bucket")
             
@@ -544,7 +544,7 @@ def test_gcs_connection_api():
         except Exception as e:
             return jsonify({
                 'status': 'error',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'message': f'Cannot write/delete from bucket: {str(e)}',
                 'configuration': {
                     'bucket_name': bucket_name,
@@ -572,7 +572,7 @@ def test_gcs_connection_api():
         except Exception as e:
             return jsonify({
                 'status': 'error',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'message': f'Cannot manage session directories: {str(e)}',
                 'configuration': {
                     'bucket_name': bucket_name,
@@ -588,7 +588,7 @@ def test_gcs_connection_api():
         
         return jsonify({
             'status': 'success',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'message': 'GCS connection successful',
             'configuration': {
                 'bucket_name': bucket_name,
@@ -615,7 +615,7 @@ def test_gcs_connection_api():
         print(traceback.format_exc())
         return jsonify({
             'status': 'error',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'message': error_msg,
             'traceback': traceback.format_exc()
         }), 500
@@ -693,7 +693,7 @@ def upload_files():
                 uploaded_files[key] = {
                     'filename': expected_filename,
                     'gcs_path': gcs_path,
-                    'uploaded_at': datetime.now().isoformat()
+                    'uploaded_at': datetime.now(timezone.utc).isoformat()
                 }
                 
                 print(f"✓ Uploaded: {expected_filename} → gs://{gcs.bucket.name}/{gcs_path}")
@@ -1070,8 +1070,8 @@ def get_session_status(session_id):
         response_data = {
             'session_id': session_id,
             'status': session['status'],
-            'created_at': session['created_at'].isoformat() if session['created_at'] else None,
-            'updated_at': session['updated_at'].isoformat() if session['updated_at'] else None,
+            'created_at': session.get('created_at'),
+            'updated_at': session.get('updated_at'),
             'has_error': session['error_info']['has_error'],
             'error_message': session['error_info']['error_message'],
             'input_files_count': len(session['input_files']),
@@ -1560,7 +1560,7 @@ def get_analytics():
         
         return jsonify({
             'analytics': status_counts,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }), 200
         
     except Exception as e:

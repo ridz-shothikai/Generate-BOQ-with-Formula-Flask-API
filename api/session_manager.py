@@ -3,7 +3,7 @@ Session Manager for MongoDB
 """
 from pymongo import MongoClient
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import traceback
 from dotenv import load_dotenv
 import sys
@@ -25,7 +25,7 @@ class SessionManager:
     
     def generate_session_id(self):
         """Generate session ID in format YYYYMMDD_HHMMSS"""
-        return datetime.now().strftime("%Y%m%d_%H%M%S")
+        return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     
     def create_session(self, session_id=None):
         """Create new session - generates session_id if not provided"""
@@ -35,8 +35,8 @@ class SessionManager:
         session_data = {
             'session_id': session_id,
             'status': 'uploaded',
-            'created_at': datetime.now(),
-            'updated_at': datetime.now(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'updated_at': datetime.now(timezone.utc).isoformat(),
             'input_files': [],  # This will store file info objects
             'uploaded_files': {},  # This stores the categorized files
             'output_file': None,
@@ -65,7 +65,7 @@ class SessionManager:
         """Update session status and other fields"""
         update_data = {
             'status': status,
-            'updated_at': datetime.now(),
+            'updated_at': datetime.now(timezone.utc).isoformat(),
             **updates
         }
         self.sessions.update_one(
@@ -79,7 +79,7 @@ class SessionManager:
             {'session_id': session_id},
             {'$set': {
                 'progress': progress_data,
-                'updated_at': datetime.now()
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }}
         )
     
@@ -87,7 +87,7 @@ class SessionManager:
         """Add input file info to session"""
         self.sessions.update_one(
             {'session_id': session_id},
-            {'$push': {'input_files': file_info}, '$set': {'updated_at': datetime.now()}}
+            {'$push': {'input_files': file_info}, '$set': {'updated_at': datetime.now(timezone.utc).isoformat()}}
         )
     
     def set_error(self, session_id, error_message, traceback_str, failed_script):
@@ -96,7 +96,7 @@ class SessionManager:
             {'session_id': session_id},
             {'$set': {
                 'status': 'failed',
-                'updated_at': datetime.now(),
+                'updated_at': datetime.now(timezone.utc).isoformat(),
                 'error_info': {
                     'has_error': True,
                     'error_message': error_message,
@@ -113,8 +113,8 @@ class SessionManager:
             {'$set': {
                 'output_file': output_info,
                 'status': 'completed',
-                'updated_at': datetime.now(),
-                'processing_info.completed_at': datetime.now()
+                'updated_at': datetime.now(timezone.utc).isoformat(),
+                'processing_info.completed_at': datetime.now(timezone.utc).isoformat()
             }}
         )
     
@@ -124,7 +124,7 @@ class SessionManager:
             {'session_id': session_id},
             {'$set': {
                 'boq_file': boq_info,
-                'updated_at': datetime.now()
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }}
         )
     
@@ -133,8 +133,8 @@ class SessionManager:
         self.sessions.update_one(
             {'session_id': session_id},
             {'$set': {
-                'processing_info.started_at': datetime.now(),
-                'updated_at': datetime.now()
+                'processing_info.started_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }}
         )
     
@@ -152,7 +152,7 @@ class SessionManager:
             {'session_id': session_id},
             {'$set': {
                 **data,
-                'updated_at': datetime.now()
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }}
         )
     
@@ -212,8 +212,8 @@ class SessionManager:
             session_data = {
                 'session_id': session['session_id'],
                 'status': session['status'],
-                'created_at': session['created_at'].isoformat() if session.get('created_at') else None,
-                'updated_at': session['updated_at'].isoformat() if session.get('updated_at') else None,
+                'created_at': session.get('created_at'),
+                'updated_at': session.get('updated_at'),
                 'input_files_count': files_count,  # Use the correct count
                 'has_error': session.get('error_info', {}).get('has_error', False),
                 'error_message': session.get('error_info', {}).get('error_message'),
@@ -226,8 +226,8 @@ class SessionManager:
             # Add processing info if available
             if session.get('processing_info'):
                 session_data['processing_info'] = {
-                    'started_at': session['processing_info'].get('started_at').isoformat() if session['processing_info'].get('started_at') else None,
-                    'completed_at': session['processing_info'].get('completed_at').isoformat() if session['processing_info'].get('completed_at') else None,
+                    'started_at': session['processing_info'].get('started_at'),
+                    'completed_at': session['processing_info'].get('completed_at'),
                     'execution_time_seconds': session['processing_info'].get('execution_time_seconds')
                 }
             
@@ -241,6 +241,6 @@ class SessionManager:
             {'session_id': session_id},
             {
                 '$inc': {'zip_download_count': 1},
-                '$set': {'updated_at': datetime.now()}
+                '$set': {'updated_at': datetime.now(timezone.utc).isoformat()}
             }
         )
