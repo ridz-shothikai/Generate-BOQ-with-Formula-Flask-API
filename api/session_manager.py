@@ -161,20 +161,31 @@ class SessionManager:
         result = self.sessions.delete_one({'session_id': session_id})
         return result.deleted_count > 0
     
-    def get_all_sessions(self, limit=10, skip=0, sort_by='created_at', sort_order=-1):
+    def get_all_sessions(self, limit=10, skip=0, sort_by='created_at', sort_order=-1, status_filter=None, search_filter=None):
         """
-        Get all sessions with pagination
+        Get all sessions with pagination and filtering
         
         Args:
             limit: Number of sessions to return
             skip: Number of sessions to skip
             sort_by: Field to sort by (default: created_at)
             sort_order: 1 for ascending, -1 for descending
+            status_filter: Filter by status (optional)
+            search_filter: Search in session_id (optional)
         
         Returns:
             List of sessions and total count
         """
-        sessions_cursor = self.sessions.find().sort(sort_by, sort_order).skip(skip).limit(limit)
+        # Build query filter
+        query_filter = {}
+        
+        if status_filter:
+            query_filter['status'] = status_filter
+        
+        if search_filter:
+            query_filter['session_id'] = {'$regex': search_filter, '$options': 'i'}
+        
+        sessions_cursor = self.sessions.find(query_filter).sort(sort_by, sort_order).skip(skip).limit(limit)
         
         # Initialize GCS handler for generating URLs
         gcs = get_gcs_handler()
@@ -233,7 +244,7 @@ class SessionManager:
             
             sessions.append(session_data)
         
-        return sessions, self.sessions.count_documents({})
+        return sessions, self.sessions.count_documents(query_filter)
     
     def increment_download_count(self, session_id):
         """Increment ZIP download count"""

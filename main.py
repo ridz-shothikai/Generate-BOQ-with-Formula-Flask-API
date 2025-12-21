@@ -1480,13 +1480,15 @@ def get_output_file_paths(session_id):
 
 @app.route('/api/sessions', methods=['GET'])
 def get_all_sessions():
-    """Get all sessions with pagination"""
+    """Get all sessions with pagination and filtering"""
     try:
         session_manager = SessionManager()
         
         # Get query parameters with defaults
         page = request.args.get('page', 1, type=int)
         limit = request.args.get('limit', 10, type=int)
+        status = request.args.get('status', None)
+        search = request.args.get('search', None)
         
         # Validate pagination
         if page < 1:
@@ -1497,13 +1499,25 @@ def get_all_sessions():
         # Calculate skip for pagination
         skip = (page - 1) * limit
         
-        # Get sessions using SessionManager
-        sessions, total_sessions = session_manager.get_all_sessions(limit=limit, skip=skip)
+        # Get sessions using SessionManager with filters
+        sessions, total_sessions = session_manager.get_all_sessions(
+            limit=limit, 
+            skip=skip, 
+            status_filter=status, 
+            search_filter=search
+        )
         total_pages = (total_sessions + limit - 1) // limit  # Ceiling division
 
         return jsonify({
             'sessions': sessions,
-            'total_sessions': total_sessions
+            'total_sessions': total_sessions,
+            'total_pages': total_pages,
+            'current_page': page,
+            'limit': limit,
+            'filters': {
+                'status': status,
+                'search': search
+            }
         }), 200
         
     except Exception as e:
@@ -1814,6 +1828,8 @@ if __name__ == '__main__':
     print("  GET  /api/download-session/<id>           - Download session ZIP file")
     print("  GET  /api/output-file-paths/<id>          - Get output file paths")
     print("  GET  /api/analytics                       - Get BOQ report analytics")
+    print("  GET  /api/sessions                        - Get all sessions (with pagination & filtering)")
+    print("    Query params: page, limit, status, search")
     print("="*80 + "\n")
     
     # Run Flask app
