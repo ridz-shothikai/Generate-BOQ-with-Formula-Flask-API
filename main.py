@@ -52,6 +52,8 @@ TEMPLATE_FILE_SINGLE = TEMPLATE_DIR / 'main_carriageway.xlsx'
 # Sequential script path
 SEQUENTIAL_SCRIPT = SRC_DIR / 'sequential.py'
 
+PORT = os.getenv('PORT', 5000)
+
 def allowed_file(filename):
     """Check if file extension is allowed"""
     return '.' in filename and \
@@ -1833,4 +1835,4 @@ if __name__ == '__main__':
     print("="*80 + "\n")
     
     # Run Flask app
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=PORT)
