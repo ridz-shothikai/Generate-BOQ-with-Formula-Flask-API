@@ -15,14 +15,14 @@ load_dotenv()
 # GCS Configuration from environment variables
 GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME')
 GCS_PROJECT_ID = os.getenv('GCS_PROJECT_ID')
-GCS_CREDENTIALS_PATH = os.getenv('GCS_CREDENTIALS_PATH')
+# GCS_CREDENTIALS_PATH = os.getenv('GCS_CREDENTIALS_PATH')
 
 class GCSHandler:
     """Handle GCS operations for the project"""
     
     def __init__(self):
-        if GCS_CREDENTIALS_PATH and os.path.exists(GCS_CREDENTIALS_PATH):
-            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GCS_CREDENTIALS_PATH
+        # if GCS_CREDENTIALS_PATH and os.path.exists(GCS_CREDENTIALS_PATH):
+        #     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GCS_CREDENTIALS_PATH
         
         self.client = storage.Client(project=GCS_PROJECT_ID)
         self.bucket = self.client.bucket(GCS_BUCKET_NAME)
