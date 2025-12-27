@@ -1686,6 +1686,64 @@ def get_analytics():
             'traceback': traceback.format_exc()
         }), 500
 
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    """
+    Get processing statistics - total sessions, completed, processing, and failed
+    """
+    try:
+        session_manager = SessionManager()
+        
+        # Use MongoDB aggregation for efficient counting
+        pipeline = [
+            {
+                '$group': {
+                    '_id': '$status',
+                    'count': {'$sum': 1}
+                }
+            }
+        ]
+        
+        # Execute aggregation
+        aggregation_result = list(session_manager.sessions.aggregate(pipeline))
+        
+        # Initialize counts
+        stats = {
+            'total_sessions': 0,
+            'completed': 0,
+            'processing': 0,
+            'failed': 0
+        }
+        
+        # Process aggregation results
+        for result in aggregation_result:
+            status = result['_id']
+            count = result['count']
+            stats['total_sessions'] += count
+            
+            if status == 'completed':
+                stats['completed'] = count
+            elif status == 'processing':
+                stats['processing'] = count
+            elif status == 'error':
+                stats['failed'] = count
+        
+        # Add timestamp
+        stats['timestamp'] = datetime.now(timezone.utc).isoformat()
+        
+        # Calculate pending (uploaded sessions that haven't started processing yet)
+        stats['pending'] = stats['total_sessions'] - (stats['processing'] + stats['completed'] + stats['failed'])
+        
+        return jsonify(stats), 200
+        
+    except Exception as e:
+        print(f"Error in get_stats: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({
+            'error': 'Failed to fetch stats',
+            'message': str(e)
+        }), 500
+
 @app.route('/', methods=['GET'])
 @app.route('/api', methods=['GET'])
 def root():
@@ -1842,6 +1900,20 @@ def root():
                     'description': 'BOQ report analytics - session counts by status'
                 },
                 'usage': 'curl -X GET http://localhost:5000/api/analytics'
+            },
+            'stats': {
+                'method': 'GET',
+                'path': '/api/stats',
+                'description': 'Get processing statistics - total sessions, completed, processing, and failed',
+                'response': {
+                    'total_sessions': 8,
+                    'completed': 5,
+                    'processing': 2,
+                    'failed': 1,
+                    'pending': 0,
+                    'timestamp': '2025-12-27T12:05:00.000000+00:00'
+                },
+                'usage': 'curl -X GET http://localhost:5000/api/stats'
             }
         },
         'workflow': {
@@ -1940,6 +2012,7 @@ if __name__ == '__main__':
     print("  GET  /api/download-session/<id>           - Download session ZIP file")
     print("  GET  /api/output-file-paths/<id>          - Get output file paths")
     print("  GET  /api/analytics                       - Get BOQ report analytics")
+    print("  GET  /api/stats                           - Get processing statistics")
     print("  GET  /api/sessions                        - Get all sessions (with pagination & filtering)")
     print("    Query params: page, limit, status, search")
     print("="*80 + "\n")
