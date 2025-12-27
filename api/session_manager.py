@@ -163,14 +163,14 @@ class SessionManager:
         result = self.sessions.delete_one({'session_id': session_id})
         return result.deleted_count > 0
     
-    def get_all_sessions(self, limit=10, skip=0, sort_by='created_at', sort_order=-1, status_filter=None, search_filter=None):
+    def get_all_sessions(self, limit=10, skip=0, sort_by='session_id', sort_order=-1, status_filter=None, search_filter=None):
         """
         Get all sessions with pagination and filtering
         
         Args:
             limit: Number of sessions to return
             skip: Number of sessions to skip
-            sort_by: Field to sort by (default: created_at)
+            sort_by: Field to sort by (default: session_id)
             sort_order: 1 for ascending, -1 for descending
             status_filter: Filter by status (optional)
             search_filter: Search in session_id (optional)
