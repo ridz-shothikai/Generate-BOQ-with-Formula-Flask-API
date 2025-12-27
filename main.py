@@ -659,7 +659,15 @@ def upload_files():
         
         # Create new session
         session_manager = SessionManager()
-        session_data = session_manager.create_session()
+        
+        # Get optional project details
+        project_name = request.form.get('project_name')
+        project_id_val = request.form.get('project_id')
+        
+        session_data = session_manager.create_session(
+            project_name=project_name, 
+            project_id=project_id_val
+        )
         session_id = session_data['session_id']
         
         print(f"\n{'='*80}")
@@ -737,6 +745,8 @@ def upload_files():
         return jsonify({
             'message': 'Files uploaded successfully to GCS',
             'session_id': session_id,
+            'project_name': project_name,
+            'project_id': project_id_val,
             'uploaded_files': uploaded_files,
             'gcs_bucket': os.getenv('GCS_BUCKET_NAME'),
             'next_step': 'Call /api/execute-calculation with this session_id to start processing'
@@ -1154,6 +1164,8 @@ def get_session_status(session_id):
         
         response_data = {
             'session_id': session_id,
+            'project_name': session.get('project_name'),
+            'project_id': session.get('project_id'),
             'status': session['status'],
             'created_at': session.get('created_at'),
             'updated_at': session.get('updated_at'),

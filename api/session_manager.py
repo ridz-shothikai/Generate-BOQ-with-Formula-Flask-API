@@ -27,13 +27,15 @@ class SessionManager:
         """Generate session ID in format YYYYMMDD_HHMMSS"""
         return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     
-    def create_session(self, session_id=None):
+    def create_session(self, session_id=None, project_name=None, project_id=None):
         """Create new session - generates session_id if not provided"""
         if session_id is None:
             session_id = self.generate_session_id()
         
         session_data = {
             'session_id': session_id,
+            'project_name': project_name,
+            'project_id': project_id,
             'status': 'uploaded',
             'created_at': datetime.now(timezone.utc).isoformat(),
             'updated_at': datetime.now(timezone.utc).isoformat(),
@@ -222,6 +224,8 @@ class SessionManager:
             # Convert MongoDB document to JSON-serializable format
             session_data = {
                 'session_id': session['session_id'],
+                'project_name': session.get('project_name'),
+                'project_id': session.get('project_id'),
                 'status': session['status'],
                 'created_at': session.get('created_at'),
                 'updated_at': session.get('updated_at'),
