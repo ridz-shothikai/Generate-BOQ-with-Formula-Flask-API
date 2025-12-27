@@ -1041,6 +1041,89 @@ def execute_calculation_sync_merged():
             'message': str(e)
         }), 500
 
+@app.route('/api/session/<session_id>', methods=['DELETE'])
+def delete_session(session_id):
+    """
+    Delete a session and all its associated data (files in GCS, database record, local files)
+    """
+    try:
+        session_manager = SessionManager()
+        session = session_manager.get_session(session_id)
+        
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+            
+        print(f"\n{'='*80}")
+        print(f"DELETING SESSION: {session_id}")
+        print(f"{'='*80}")
+        
+        # 1. Delete files from GCS
+        try:
+            gcs = get_gcs_handler()
+            # List all objects with session prefix
+            session_prefix = f"sessions/{session_id}/"
+            blobs = gcs.list_files(prefix=session_prefix)
+            
+            deleted_count = 0
+            for blob_name in blobs:
+                try:
+                    gcs.delete_file(blob_name)
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"Warning: Failed to delete GCS file {blob_name}: {str(e)}")
+            
+            print(f"✓ Deleted {deleted_count} files from GCS")
+            
+        except Exception as e:
+            print(f"Warning: Error during GCS cleanup: {str(e)}")
+            # Continue with deletion even if GCS cleanup fails partially
+            
+        # 2. Delete local files if they exist
+        try:
+            local_deleted = False
+            
+            # Check data dir
+            local_data_dir = DATA_DIR / 'sessions' / session_id
+            if local_data_dir.exists():
+                shutil.rmtree(local_data_dir)
+                local_deleted = True
+                
+            # Check output dir
+            local_output_dir = OUTPUT_DIR / 'sessions' / session_id
+            if local_output_dir.exists():
+                shutil.rmtree(local_output_dir)
+                local_deleted = True
+                
+            if local_deleted:
+                print(f"✓ Deleted local session directories")
+                
+        except Exception as e:
+            print(f"Warning: Error during local file cleanup: {str(e)}")
+            
+        # 3. Delete from database
+        if session_manager.delete_session(session_id):
+            print(f"✓ Deleted session record from database")
+            
+            return jsonify({
+                'status': 'success',
+                'session_id': session_id,
+                'message': 'Session and all associated data deleted successfully'
+            }), 200
+        else:
+            return jsonify({
+                'error': 'Database deletion failed',
+                'session_id': session_id
+            }), 500
+            
+    except Exception as e:
+        print(f"Error deleting session: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({
+            'error': 'Delete failed',
+            'message': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/api/session-status/<session_id>', methods=['GET'])
 def get_session_status(session_id):
     """Get session status with progress"""
@@ -1673,6 +1756,17 @@ def root():
                 'description': 'Check the status of a processing session',
                 'usage': 'curl -X GET http://localhost:5000/api/session-status/your_session_id'
             },
+            'delete_session': {
+                'method': 'DELETE',
+                'path': '/api/session/<session_id>',
+                'description': 'Delete a session and all associated files',
+                'response': {
+                    'status': 'success',
+                    'session_id': 'session_id',
+                    'message': 'Session and all associated data deleted successfully'
+                },
+                'usage': 'curl -X DELETE http://localhost:5000/api/session/your_session_id'
+            },
             'download_file': {
                 'method': 'GET',
                 'path': '/api/download-file/<session_id>',
@@ -1824,6 +1918,7 @@ if __name__ == '__main__':
     print("  POST /api/execute-calculation-sync-merged - Start calculation (main_carriageway_and_boq, synchronous)")
     print("  GET  /api/test-gcs-connection              - Test GCS connection and permissions")
     print("  GET  /api/session-status/<id>             - Check session status")
+    print("  DELETE /api/session/<id>                  - Delete session")
     print("  GET  /api/preview-file/<id>               - Get preview URL for result")
     print("  GET  /api/download-file/<id>              - Download result")
     print("  GET  /api/download-boq/<id>               - Download BOQ file")
