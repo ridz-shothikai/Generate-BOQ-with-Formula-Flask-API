@@ -163,7 +163,7 @@ class SessionManager:
         result = self.sessions.delete_one({'session_id': session_id})
         return result.deleted_count > 0
     
-    def get_all_sessions(self, limit=10, skip=0, sort_by='session_id', sort_order=-1, status_filter=None, search_filter=None):
+    def get_all_sessions(self, limit=10, skip=0, sort_by='session_id', sort_order=-1, status_filter=None, search_filter=None, project_id_filter=None):
         """
         Get all sessions with pagination and filtering
         
@@ -174,6 +174,7 @@ class SessionManager:
             sort_order: 1 for ascending, -1 for descending
             status_filter: Filter by status (optional)
             search_filter: Search in session_id (optional)
+            project_id_filter: Filter by project_id (optional)
         
         Returns:
             List of sessions and total count
@@ -183,6 +184,9 @@ class SessionManager:
         
         if status_filter:
             query_filter['status'] = status_filter
+            
+        if project_id_filter:
+            query_filter['project_id'] = project_id_filter
         
         if search_filter:
             query_filter['session_id'] = {'$regex': search_filter, '$options': 'i'}

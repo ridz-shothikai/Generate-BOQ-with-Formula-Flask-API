@@ -1586,6 +1586,7 @@ def get_all_sessions():
         limit = request.args.get('limit', 10, type=int)
         status = request.args.get('status', None)
         search = request.args.get('search', None)
+        project_id = request.args.get('project_id', None)
         
         # Validate pagination
         if page < 1:
@@ -1601,7 +1602,8 @@ def get_all_sessions():
             limit=limit, 
             skip=skip, 
             status_filter=status, 
-            search_filter=search
+            search_filter=search,
+            project_id_filter=project_id
         )
         total_pages = (total_sessions + limit - 1) // limit  # Ceiling division
 
@@ -1613,7 +1615,8 @@ def get_all_sessions():
             'limit': limit,
             'filters': {
                 'status': status,
-                'search': search
+                'search': search,
+                'project_id': project_id
             }
         }), 200
         
