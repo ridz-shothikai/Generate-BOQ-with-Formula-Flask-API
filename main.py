@@ -1725,7 +1725,7 @@ def get_stats():
                 stats['completed'] = count
             elif status == 'processing':
                 stats['processing'] = count
-            elif status == 'error':
+            elif status == 'failed':
                 stats['failed'] = count
         
         # Add timestamp
