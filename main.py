@@ -187,22 +187,22 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
         session_manager.update_session_status(session_id, 'processing')
         session_manager.set_processing_started(session_id)
         
-        # Define processing steps with user-friendly names
+        # Define processing steps with user-friendly names and timeouts
         processing_steps = [
-            {'script': 'tcs_schedule', 'name': 'TCS Schedule Processing', 'message': 'Processing TCS schedule data...'},
-            {'script': 'tcs_input', 'name': 'TCS Input Processing', 'message': 'Processing TCS input specifications...'},
-            {'script': 'emb_height', 'name': 'Embankment Height Processing', 'message': 'Processing embankment height data...'},
-            {'script': 'pavement_input', 'name': 'Pavement Input Processing', 'message': 'Processing pavement layer specifications...'},
-            {'script': 'constant_fill', 'name': 'Constant Values Processing', 'message': 'Applying constant values...'},
-            {'script': 'formula_applier', 'name': 'Formula Application', 'message': 'Applying calculation formulas...'},
-            {'script': 'pavement_input_with_internal', 'name': 'Geogrid Calculation', 'message': 'Calculating geogrid requirements...'},
-            {'script': 'final_sum_applier', 'name': 'Final Summary', 'message': 'Generating final summary...'},
+            {'script': 'tcs_schedule', 'name': 'TCS Schedule Processing', 'message': 'Processing TCS schedule data...', 'timeout': 600},
+            {'script': 'tcs_input', 'name': 'TCS Input Processing', 'message': 'Processing TCS input specifications...', 'timeout': 600},
+            {'script': 'emb_height', 'name': 'Embankment Height Processing', 'message': 'Processing embankment height data...', 'timeout': 600},
+            {'script': 'pavement_input', 'name': 'Pavement Input Processing', 'message': 'Processing pavement layer specifications...', 'timeout': 600},
+            {'script': 'constant_fill', 'name': 'Constant Values Processing', 'message': 'Applying constant values...', 'timeout': 600},
+            {'script': 'formula_applier', 'name': 'Formula Application', 'message': 'Applying calculation formulas...', 'timeout': 600},
+            {'script': 'pavement_input_with_internal', 'name': 'Geogrid Calculation', 'message': 'Calculating geogrid requirements...', 'timeout': 600},
+            {'script': 'final_sum_applier', 'name': 'Final Summary', 'message': 'Generating final summary...', 'timeout': 600},
             # {'script': 'calculator', 'name': 'Formula Calculation', 'message': 'Calculating formula values...'},
         ]
         
         # Only add boq_populator step if is_merged is True
         if is_merged:
-            processing_steps.append({'script': 'boq_populator', 'name': 'BOQ Generation', 'message': 'Generating BOQ template...'})
+            processing_steps.append({'script': 'boq_populator', 'name': 'BOQ Generation', 'message': 'Generating BOQ template...', 'timeout': 600})
         
         total_steps = len(processing_steps)
         
@@ -235,8 +235,9 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
                 script_name = step_info['script']
                 step_name = step_info['name']
                 step_message = step_info['message']
+                step_timeout = step_info.get('timeout', 300)  # Default to 5 minutes if not specified
                 
-                print(f"Executing step {step_num}/{total_steps}: {step_name}")
+                print(f"Executing step {step_num}/{total_steps}: {step_name} (timeout: {step_timeout}s)")
                 
                 # Update progress to show current step (before execution)
                 if step_num > 1:  # For steps 2-8, update current step
@@ -257,17 +258,23 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
                     script_path = SRC_DIR / 'internal' / f'{script_name}.py'
                 
                 # Run the script - output goes directly to console for real-time visibility
-                result = subprocess.run(
-                    [sys.executable, str(script_path)],
-                    capture_output=False,  # Allow real-time output to console
-                    text=True,
-                    timeout=300,  # 5 minute timeout per script
-                    env=env,
-                    cwd=PROJECT_ROOT
-                )
-                
-                if result.returncode != 0:
-                    error_msg = f"Script {step_name} failed with exit code {result.returncode}"
+                try:
+                    result = subprocess.run(
+                        [sys.executable, str(script_path)],
+                        capture_output=False,  # Allow real-time output to console
+                        text=True,
+                        timeout=step_timeout,  # Use step-specific timeout
+                        env=env,
+                        cwd=PROJECT_ROOT
+                    )
+                    
+                    if result.returncode != 0:
+                        error_msg = f"Script {step_name} failed with exit code {result.returncode}"
+                        raise RuntimeError(error_msg)
+                        
+                except subprocess.TimeoutExpired:
+                    error_msg = f"{step_name} timed out after {step_timeout} seconds"
+                    print(f"✗ {error_msg}")
                     raise RuntimeError(error_msg)
                 
                 # Update progress AFTER step completion
