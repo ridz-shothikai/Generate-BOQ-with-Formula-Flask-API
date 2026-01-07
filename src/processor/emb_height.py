@@ -100,8 +100,8 @@ def create_emb_height_dictionary(emb_height_file):
         
         # Skip if key is NaN
         if pd.notna(key):
-            # Round key to 5 decimal places for consistent matching
-            key_float = round(float(key), 5)
+            # Round key to 6 decimal places for consistent matching
+            key_float = round(float(key), 6)
             emb_dict[key_float] = {
                 'left': float(value_e) if pd.notna(value_e) else None,
                 'right': float(value_f) if pd.notna(value_f) else None

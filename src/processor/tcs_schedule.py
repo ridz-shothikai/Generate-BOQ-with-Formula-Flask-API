@@ -70,6 +70,10 @@ df[2] = pd.to_numeric(df[2], errors='coerce')  # Length (column D)
 # Remove any rows where all values are NaN
 df_output = df.dropna(how='all')
 
+# Round columns A and B (df[0] and df[1]) to 6 decimal places
+df_output[0] = df_output[0].round(6)
+df_output[1] = df_output[1].round(6)
+
 print(f"\nData after cleaning:")
 print(df_output.head())
 print(f"Total rows to write: {len(df_output)}")
