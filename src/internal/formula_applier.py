@@ -11,6 +11,7 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.append(project_root)
 
 from src.utils.gcs_utils import get_gcs_handler
+from src.utils.data_collector import get_collector
 
 load_dotenv()
 if sys.platform == "win32":
@@ -87,91 +88,97 @@ class FormulaApplier:
         Returns:
             Dictionary with statistics about the operation
         """
-        print(f"Looking for input Excel file at: {self.input_excel_path}")
-        print(f"Input Excel file exists: {self.input_excel_path.exists()}")
-        
-        if not self.input_excel_path.exists():
-            # Try alternative path - one level up from src/internal to src/data/
-            alternative_path = Path(__file__).parent.parent / "data" / self.output_filename
-            print(f"Trying alternative path: {alternative_path}")
-            print(f"Alternative path exists: {alternative_path.exists()}")
-            
-            if alternative_path.exists():
-                self.input_excel_path = alternative_path
-                print(f"Using alternative input path: {self.input_excel_path}")
-            else:
-                raise FileNotFoundError(f"Input Excel file not found at: {self.input_excel_path}\nAlso tried: {alternative_path}")
-        
-        # Load input workbook
-        input_wb = load_workbook(self.input_excel_path)
-        input_sheet_name = "Quantity"
-        
-        if input_sheet_name not in input_wb.sheetnames:
-            raise ValueError(f"Input sheet '{input_sheet_name}' not found in {self.input_excel_path}")
-        
-        input_sheet = input_wb[input_sheet_name]
-        formulas = self.template.get("formulas", {})
-        
-        # Find data rows from input sheet STARTING FROM start_row
-        data_rows = []
-        for row_num in range(start_row, input_sheet.max_row + 1):  # Start from start_row instead of 1
-            cell_value = input_sheet[f'{reference_column}{row_num}'].value
-            if cell_value is not None and str(cell_value).strip():
-                data_rows.append(row_num)
-        
-        if not data_rows:
-            raise ValueError(f"No data found in column {reference_column} from row {start_row}")
-        
-        print(f"Found {len(data_rows)} data rows in input sheet (starting from row {start_row})")
-        
-        # Load or create output workbook
-        if self.output_excel_path.exists():
-            output_wb = load_workbook(self.output_excel_path)
-            print(f"Loaded existing output file: {self.output_excel_path}")
+        # Prefer data row count from collected CSV (constant_fill > pavement_input > tcs_input)
+        from pathlib import Path as _P
+        import pandas as _pd
+        import os as _os
+        session_data_dir = _os.getenv('SESSION_DATA_DIR')
+        if session_data_dir:
+            collect_base = _P(session_data_dir) / 'collected'
         else:
-            # Create new workbook if output doesn't exist
-            output_wb = load_workbook(self.input_excel_path)
-            print(f"Created new output file: {self.output_excel_path}")
+            collect_base = _P(_os.getcwd()) / 'data' / 'sessions' / _os.getenv('SESSION_ID', 'default') / 'collected'
+        csv_candidates = [
+            collect_base / 'constant_fill.csv',
+            collect_base / 'pavement_input.csv',
+            collect_base / 'tcs_input.csv',
+            collect_base / 'tcs_schedule.csv',
+        ]
+        row_count = 0
+        for csv_path in csv_candidates:
+            if csv_path.exists():
+                try:
+                    row_count = len(_pd.read_csv(csv_path))
+                    print(f"[FormulaApplier] Found collected CSV: {csv_path.name} with {row_count} rows")
+                    break
+                except Exception as e:
+                    print(f"[FormulaApplier] Error reading {csv_path.name}: {e}")
+                    continue
+        if row_count == 0:
+            print(f"[FormulaApplier] No collected CSV found in {collect_base}; listing directory...")
+            if collect_base.exists():
+                files = list(collect_base.glob('*.csv'))
+                print(f"[FormulaApplier] Available CSVs: {[f.name for f in files]}")
+            else:
+                print(f"[FormulaApplier] Collected directory does not exist: {collect_base}")
+            # Fallback: scan workbook
+            print(f"Looking for input Excel file at: {self.input_excel_path}")
+            print(f"Input Excel file exists: {self.input_excel_path.exists()}")
+            if not self.input_excel_path.exists():
+                alternative_path = Path(__file__).parent.parent / "data" / self.output_filename
+                if alternative_path.exists():
+                    self.input_excel_path = alternative_path
+                else:
+                    raise FileNotFoundError(f"Input Excel file not found at: {self.input_excel_path}\nAlso tried: {alternative_path}")
+            input_wb = load_workbook(self.input_excel_path)
+            input_sheet_name = "Quantity"
+            if input_sheet_name not in input_wb.sheetnames:
+                raise ValueError(f"Input sheet '{input_sheet_name}' not found in {self.input_excel_path}")
+            input_sheet = input_wb[input_sheet_name]
+            # Count non-empty rows from start_row in reference column
+            for row_num in range(start_row, input_sheet.max_row + 1):
+                val = input_sheet[f'{reference_column}{row_num}'].value
+                if val is not None and str(val).strip():
+                    row_count += 1
+            input_wb.close()
+        else:
+            print(f"Found {row_count} data rows from collected CSV")
+        formulas = self.template.get("formulas", {})
+        if row_count == 0:
+            raise ValueError("No data rows detected for formula application")
         
-        # Ensure 'Quantity' sheet exists in output
-        output_sheet_name = "Quantity"
-        if output_sheet_name not in output_wb.sheetnames:
-            # Create Quantity sheet if it doesn't exist
-            output_wb.create_sheet(output_sheet_name)
-            print(f"Created new sheet: {output_sheet_name}")
-        
-        output_sheet = output_wb[output_sheet_name]
-        
-        # Apply formulas to output sheet starting from start_row
+        # Build formula cells starting from start_row
         total_count = 0
         output_row = start_row
-        
-        for input_row_num in data_rows:
+        cell_formulas = {}
+        for i in range(row_count):
+            input_row_num = start_row + i
             for col_letter, formula_template in formulas.items():
                 if formula_template:
                     formula = formula_template.replace("{row}", str(input_row_num))
-                    output_sheet[f"{col_letter}{output_row}"] = formula
+                    cell_formulas[f"{col_letter}{output_row}"] = formula
                     total_count += 1
             output_row += 1
         
-        # Save the output workbook
-        output_wb.save(self.output_excel_path)
-        input_wb.close()
-        output_wb.close()
+
+        # Store formulas via collector for single-write later
+        collector = get_collector()
+        collector.add_formula_data('formula_applier', {
+            'Quantity': cell_formulas
+        })
         
         # Note: File will be uploaded to GCS at the end of all processing in main.py
         # No need to upload here for efficiency
         
         return {
-            "input_first_row": min(data_rows),
-            "input_last_row": max(data_rows),
-            "input_total_rows": len(data_rows),
+            "input_first_row": start_row,
+            "input_last_row": start_row + row_count - 1,
+            "input_total_rows": row_count,
             "output_start_row": start_row,
             "output_end_row": output_row - 1,
             "formulas_per_row": len(formulas),
             "total_formulas": total_count,
             "output_file": str(self.output_excel_path),
-            "output_sheet": output_sheet_name
+            "output_sheet": "Quantity"
         }
     
     def apply_formulas_with_custom_mapping(self, row_mapping, start_row=7):
@@ -191,7 +198,7 @@ class FormulaApplier:
         if not self.input_excel_path.exists():
             raise FileNotFoundError(f"Input Excel file not found: {self.input_excel_path}")
         
-        # Load input workbook
+        # Load input workbook (read-only)
         input_wb = load_workbook(self.input_excel_path)
         input_sheet_name = "Quantity"
         
@@ -201,32 +208,22 @@ class FormulaApplier:
         input_sheet = input_wb[input_sheet_name]
         formulas = self.template.get("formulas", {})
         
-        # Load or create output workbook
-        if self.output_excel_path.exists():
-            output_wb = load_workbook(self.output_excel_path)
-        else:
-            output_wb = load_workbook(self.input_excel_path)
-        
-        # Ensure 'Quantity' sheet exists
-        output_sheet_name = "Quantity"
-        if output_sheet_name not in output_wb.sheetnames:
-            output_wb.create_sheet(output_sheet_name)
-        
-        output_sheet = output_wb[output_sheet_name]
-        
-        # Apply formulas using custom mapping
+        # Build formula cells using custom mapping
         total_count = 0
+        cell_formulas = {}
         for input_row, output_row in row_mapping.items():
             for col_letter, formula_template in formulas.items():
                 if formula_template:
                     formula = formula_template.replace("{row}", str(input_row))
-                    output_sheet[f"{col_letter}{output_row}"] = formula
+                    cell_formulas[f"{col_letter}{output_row}"] = formula
                     total_count += 1
-        
-        # Save the output workbook
-        output_wb.save(self.output_excel_path)
         input_wb.close()
-        output_wb.close()
+
+        # Store formulas via collector
+        collector = get_collector()
+        collector.add_formula_data('formula_applier', {
+            'Quantity': cell_formulas
+        })
         
         # Note: File will be uploaded to GCS at the end of all processing in main.py
         # No need to upload here for efficiency
@@ -235,7 +232,7 @@ class FormulaApplier:
             "total_mappings": len(row_mapping),
             "total_formulas": total_count,
             "output_file": str(self.output_excel_path),
-            "output_sheet": output_sheet_name
+            "output_sheet": "Quantity"
         }
     
     def get_template_info(self):

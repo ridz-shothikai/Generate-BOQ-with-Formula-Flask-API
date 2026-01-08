@@ -11,6 +11,7 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.append(project_root)
 
 from src.utils.gcs_utils import get_gcs_handler
+from src.utils.data_collector import get_collector
 
 load_dotenv()
 if sys.platform == "win32":
@@ -67,43 +68,49 @@ class FinalSumApplier:
             return json.load(f)
     
     def find_last_data_row(self, reference_column='D', start_row=7):
-        """
-        Find the last row with data in the specified column.
-        
-        Args:
-            reference_column: Column to check for data (default: 'D')
-            start_row: Starting row to check from (default: 7)
-        
-        Returns:
-            Last row number with data
-        """
+        """Determine last data row from collected CSV if available, else workbook."""
+        from pathlib import Path as _P
+        import pandas as _pd
+        import os as _os
+        session_data_dir = _os.getenv('SESSION_DATA_DIR')
+        if session_data_dir:
+            collect_base = _P(session_data_dir) / 'collected'
+        else:
+            collect_base = _P(_os.getcwd()) / 'data' / 'sessions' / _os.getenv('SESSION_ID', 'default') / 'collected'
+        csv_candidates = [
+            collect_base / 'constant_fill.csv',
+            collect_base / 'pavement_input.csv',
+            collect_base / 'tcs_input.csv',
+            collect_base / 'tcs_schedule.csv',
+        ]
+        for csv_path in csv_candidates:
+            if csv_path.exists():
+                try:
+                    row_count = len(_pd.read_csv(csv_path))
+                    print(f"[FinalSumApplier] Found collected CSV: {csv_path.name} with {row_count} rows")
+                    return start_row + row_count - 1 if row_count > 0 else start_row - 1
+                except Exception as e:
+                    print(f"[FinalSumApplier] Error reading {csv_path.name}: {e}")
+                    continue
+        # Fallback to workbook scan
+        print(f"[FinalSumApplier] No collected CSV found in {collect_base}; falling back to workbook scan")
         print(f"Looking for output Excel file at: {self.output_excel_path}")
         print(f"Output Excel file exists: {self.output_excel_path.exists()}")
-        
         if not self.output_excel_path.exists():
             raise FileNotFoundError(f"Output Excel file not found: {self.output_excel_path}")
-        
-        # Load output workbook
         output_wb = load_workbook(self.output_excel_path)
         output_sheet_name = "Quantity"
-        
         if output_sheet_name not in output_wb.sheetnames:
             raise ValueError(f"Output sheet '{output_sheet_name}' not found in {self.output_excel_path}")
-        
         output_sheet = output_wb[output_sheet_name]
-        
-        # Find last data row
         last_data_row = None
         for row_num in range(start_row, output_sheet.max_row + 1):
             cell_value = output_sheet[f'{reference_column}{row_num}'].value
             if cell_value is not None and str(cell_value).strip():
                 last_data_row = row_num
-        
         output_wb.close()
-        
         if last_data_row is None:
             raise ValueError(f"No data found in column {reference_column} from row {start_row}")
-        
         return last_data_row
     
     def apply_formulas_to_last_plus_three(self, reference_column='D', start_row=7):
@@ -125,25 +132,29 @@ class FinalSumApplier:
         print(f"Last data row found: {last_data_row}")
         print(f"Target row for formulas: {target_row}")
         
-        # Load output workbook
+        # Load output workbook (read-only for finding last row)
         output_wb = load_workbook(self.output_excel_path)
         output_sheet_name = "Quantity"
         output_sheet = output_wb[output_sheet_name]
         
         formulas = self.template.get("formulas", {})
         
-        # Apply formulas to target row
+        # Build formulas to target row
         total_count = 0
+        cell_formulas = {}
         for col_letter, formula_template in formulas.items():
             if formula_template:
                 # Replace {row} with the last data row for SUM formulas
                 formula = formula_template.replace("{row}", str(last_data_row))
-                output_sheet[f"{col_letter}{target_row}"] = formula
+                cell_formulas[f"{col_letter}{target_row}"] = formula
                 total_count += 1
-        
-        # Save the output workbook
-        output_wb.save(self.output_excel_path)
         output_wb.close()
+
+        # Store formulas via collector
+        collector = get_collector()
+        collector.add_formula_data('final_sum_applier', {
+            'Quantity': cell_formulas
+        })
         
         # Note: File will be uploaded to GCS at the end of all processing in main.py
         # No need to upload here for efficiency
@@ -173,25 +184,28 @@ class FinalSumApplier:
         print(f"Using end row: {end_row}")
         print(f"Target row for formulas: {target_row}")
         
-        # Load output workbook
+        # Load output workbook (for context only)
         output_wb = load_workbook(self.output_excel_path)
         output_sheet_name = "Quantity"
         output_sheet = output_wb[output_sheet_name]
         
         formulas = self.template.get("formulas", {})
         
-        # Apply formulas to target row
+        # Build formulas to target row
         total_count = 0
+        cell_formulas = {}
         for col_letter, formula_template in formulas.items():
             if formula_template:
                 # Replace {row} with the specified end row
                 formula = formula_template.replace("{row}", str(end_row))
-                output_sheet[f"{col_letter}{target_row}"] = formula
+                cell_formulas[f"{col_letter}{target_row}"] = formula
                 total_count += 1
-        
-        # Save the output workbook
-        output_wb.save(self.output_excel_path)
         output_wb.close()
+        # Store formulas via collector
+        collector = get_collector()
+        collector.add_formula_data('final_sum_applier', {
+            'Quantity': cell_formulas
+        })
         
         # Note: File will be uploaded to GCS at the end of all processing in main.py
         # No need to upload here for efficiency

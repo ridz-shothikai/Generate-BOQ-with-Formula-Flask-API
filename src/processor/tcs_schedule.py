@@ -11,6 +11,7 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.append(project_root)
 
 from src.utils.gcs_utils import get_gcs_handler
+from src.utils.data_collector import get_collector
 
 load_dotenv()
 
@@ -78,19 +79,21 @@ print(f"\nData after cleaning:")
 print(df_output.head())
 print(f"Total rows to write: {len(df_output)}")
 
-# Load the copied workbook and write to it
-with pd.ExcelWriter(output_file, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-    # Write to 'Quantity' sheet starting from row 7, column A (0-indexed row 6, col 0)
-    # header=False and index=False ensure only data is written
-    df_output.to_excel(writer, sheet_name='Quantity', startrow=6, startcol=0, index=False, header=False)
+# MODIFIED: Store data in collector instead of writing to Excel
+collector = get_collector()
+collector.add_data('tcs_schedule', {
+    'sheet_name': 'Quantity',
+    'dataframe': df_output,
+    'start_row': 6,  # Row 7 (0-indexed)
+    'start_col': 0,  # Column A
+    'write_header': False,
+    'write_index': False
+})
 
-print(f"\nSuccessfully wrote data to {output_file}")
+print(f"\nSuccessfully stored data for later writing")
 print(f"Sheet: Quantity")
 print(f"Starting from row: 7, column: A")
-print(f"Total data rows written: {len(df_output)}")
-
-# Note: File will be uploaded to GCS at the end of all processing in main.py
-# No need to upload here for efficiency
+print(f"Total data rows to write: {len(df_output)}")
 
 # Cleanup temp input file only
 os.remove(input_file)

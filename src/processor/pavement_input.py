@@ -15,6 +15,7 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.append(project_root)
 
 from src.utils.gcs_utils import get_gcs_handler
+from src.utils.data_collector import get_collector
 
 load_dotenv()
 if sys.platform == "win32":
@@ -130,20 +131,42 @@ def create_pavement_dictionary(pavement_input_file):
 
 def populate_columns(main_carriageway_file, pavement_dict, output_file):
     """
-    Reads main_carriageway_and_boq.xlsx
+    Reads collected data from emb_height.py and adds pavement columns
     Populates columns based on formula
     """
     print("\n" + "="*80)
-    print("STEP 2: Populating main_carriageway_and_boq.xlsx")
+    print("STEP 2: Populating Pavement Input Data")
     print("="*80)
     
-    # Read the main carriageway file
-    df = pd.read_excel(main_carriageway_file, sheet_name='Quantity', skiprows=6, header=None)
-    print("[OK] Read main_carriageway_and_boq.xlsx:", len(df), "rows")
-    print("  Current columns:", len(df.columns))
+    # Read from collected CSV (emb_height has the latest data)
+    import os as _os
+    from pathlib import Path as _P
     
-    # Remove empty rows
-    df = df.dropna(how='all')
+    session_data_dir = _os.getenv('SESSION_DATA_DIR')
+    if session_data_dir:
+        collect_base = _P(session_data_dir) / 'collected'
+    else:
+        session_id = _os.getenv('SESSION_ID', 'default')
+        collect_base = _P(_os.getcwd()) / 'data' / 'sessions' / session_id / 'collected'
+    
+    # Try to read from emb_height collected CSV
+    emb_height_csv = collect_base / 'emb_height.csv'
+    if emb_height_csv.exists():
+        df = pd.read_csv(emb_height_csv)
+        print(f"[OK] Read emb_height.csv from collector: {len(df)} rows")
+    else:
+        print(f"[WARNING] emb_height.csv not found at {emb_height_csv}")
+        print(f"[FALLBACK] Reading from tcs_input.csv...")
+        tcs_input_csv = collect_base / 'tcs_input.csv'
+        if tcs_input_csv.exists():
+            df = pd.read_csv(tcs_input_csv)
+            print(f"[OK] Read tcs_input.csv from collector: {len(df)} rows")
+        else:
+            print(f"[ERROR] No collected data found in {collect_base}")
+            print(f"[DEBUG] Available files: {list(collect_base.glob('*.csv')) if collect_base.exists() else 'directory does not exist'}")
+            raise FileNotFoundError(f"No collected CSV data found in {collect_base}")
+    print("[OK] Read collected data:", len(df), "rows")
+    print("  Current columns:", len(df.columns))
     
     # Column AX = index 49
     AX_COL_INDEX = 49
@@ -597,13 +620,20 @@ def populate_columns(main_carriageway_file, pavement_dict, output_file):
             df.iloc[:, col_idx] = col_value
         print(f"[OK] Column index {col_idx} ({col_name}) set to: {col_value}")
     
-    # Save to Excel using ExcelWriter with overlay mode
-    print(f"\n[OK] Saving to {output_file}...")
+    # MODIFIED: Store data in collector instead of writing to Excel
+    print(f"\n[OK] Storing data for later writing...")
     
-    with pd.ExcelWriter(output_file, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-        df.to_excel(writer, sheet_name='Quantity', startrow=6, startcol=0, index=False, header=False)
+    collector = get_collector()
+    collector.add_data('pavement_input', {
+        'sheet_name': 'Quantity',
+        'dataframe': df,
+        'start_row': 6,  # Row 7 (0-indexed)
+        'start_col': 0,  # Column A
+        'write_header': False,
+        'write_index': False
+    })
     
-    print("[OK] Saved!")
+    print("[OK] Data stored successfully!")
     
     return df
 

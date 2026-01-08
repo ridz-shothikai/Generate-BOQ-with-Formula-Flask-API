@@ -20,6 +20,7 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.append(project_root)
 
 from src.utils.gcs_utils import get_gcs_handler
+from src.utils.data_collector import get_collector
 
 load_dotenv()
 if sys.platform == "win32":
@@ -212,21 +213,32 @@ def create_tcs_dictionary(tcs_input_file):
 
 def populate_specifications(main_carriageway_file, tcs_dict, output_file):
     """
-    Reads main_carriageway_and_boq.xlsx Quantity sheet from row 7 onwards
-    Adds TCS specifications and writes back starting from row 7
+    Reads collected data from tcs_schedule.py and adds TCS specifications
     """
     print("\n" + "="*80)
-    print("STEP 2: Populating main_carriageway_and_boq.xlsx (Quantity sheet)")
+    print("STEP 2: Populating TCS Input Specifications")
     print("="*80)
     
-    # Read data from row 7 onwards (skiprows=6 to skip rows 1-6)
-    df = pd.read_excel(main_carriageway_file, sheet_name='Quantity', skiprows=6, header=None)
+    # Read from collected CSV (tcs_schedule has the latest data)
+    import os as _os
+    from pathlib import Path as _P
     
-    # Remove empty rows
-    df = df.dropna(how='all')
+    session_data_dir = _os.getenv('SESSION_DATA_DIR')
+    if session_data_dir:
+        collect_base = _P(session_data_dir) / 'collected'
+    else:
+        session_id = _os.getenv('SESSION_ID', 'default')
+        collect_base = _P(_os.getcwd()) / 'data' / 'sessions' / session_id / 'collected'
     
-    print(f"[OK] Read Quantity sheet from row 7: {len(df)} data rows")
-    print(f"  Existing columns: {len(df.columns)}")
+    # Try to read from tcs_schedule collected CSV
+    tcs_schedule_csv = collect_base / 'tcs_schedule.csv'
+    if tcs_schedule_csv.exists():
+        df = pd.read_csv(tcs_schedule_csv)
+        print(f"[OK] Read tcs_schedule.csv from collector: {len(df)} rows")
+    else:
+        print(f"[ERROR] tcs_schedule.csv not found at {tcs_schedule_csv}")
+        print(f"[DEBUG] Available files: {list(collect_base.glob('*.csv')) if collect_base.exists() else 'directory does not exist'}")
+        raise FileNotFoundError(f"tcs_schedule.csv not found in {collect_base}")
     
     # KEEP ONLY FIRST 4 COLUMNS (A, B, C, D)
     df = df.iloc[:, :4].copy()
@@ -322,13 +334,20 @@ def populate_specifications(main_carriageway_file, tcs_dict, output_file):
     print(f"  Columns A-D: Core data")
     print(f"  Columns E onwards: {len(spec_data)} specification columns")
     
-    # Save to Excel - write to Quantity sheet starting from row 7 (0-indexed row 6)
-    print(f"\n[OK] Writing to {output_file} (Quantity sheet, starting row 7, column A)...")
+    # MODIFIED: Store data in collector instead of writing to Excel
+    print(f"\n[OK] Storing data for later writing (Quantity sheet, starting row 7, column A)...")
     
-    with pd.ExcelWriter(output_file, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-        df.to_excel(writer, sheet_name='Quantity', startrow=6, startcol=0, index=False, header=False)
+    collector = get_collector()
+    collector.add_data('tcs_input', {
+        'sheet_name': 'Quantity',
+        'dataframe': df,
+        'start_row': 6,  # Row 7 (0-indexed)
+        'start_col': 0,  # Column A
+        'write_header': False,
+        'write_index': False
+    })
     
-    print(f"[OK] Successfully written {len(df)} rows starting from row 7")
+    print(f"[OK] Successfully stored {len(df)} rows for writing")
     
     return df
 

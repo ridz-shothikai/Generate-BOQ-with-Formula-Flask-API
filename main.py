@@ -200,7 +200,9 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
             # {'script': 'calculator', 'name': 'Formula Calculation', 'message': 'Calculating formula values...'},
         ]
         
-        # Only add boq_populator step if is_merged is True
+        # Always write collected data once after calculations
+        processing_steps.append({'script': 'collected_writer', 'name': 'Writing Collected Data', 'message': 'Writing all collected data to Excel...', 'timeout': 600})
+        # Only add BOQ generation for merged flow
         if is_merged:
             processing_steps.append({'script': 'boq_populator', 'name': 'BOQ Generation', 'message': 'Generating BOQ template...', 'timeout': 600})
         
