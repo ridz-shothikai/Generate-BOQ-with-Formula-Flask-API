@@ -178,28 +178,37 @@ def calculate_geogrid_columns(main_carriageway_file, conditions, output_file):
         collect_base = _P(session_data_dir) / 'collected'
     else:
         collect_base = _P(_os.getcwd()) / 'data' / 'sessions' / _os.getenv('SESSION_ID', 'default') / 'collected'
+    
+    # CRITICAL: Load from formula_applier.csv which has all calculated columns (DL, DS, EE, EJ, FF, FD, FY, FS)
+    # These columns are needed for geogrid calculations
     csv_candidates = [
-        collect_base / 'constant_fill.csv',
-        collect_base / 'pavement_input.csv',
-        collect_base / 'tcs_input.csv',
+        collect_base / 'formula_applier.csv',  # PRIMARY: has all formula results needed
+        collect_base / 'constant_fill.csv',    # Fallback 1
+        collect_base / 'pavement_input.csv',   # Fallback 2
+        collect_base / 'tcs_input.csv',        # Fallback 3
     ]
     df = None
+    loaded_csv = None
     for csv_path in csv_candidates:
         if csv_path.exists():
             try:
                 df = _pd.read_csv(csv_path)
+                loaded_csv = csv_path.name
                 print(f"[GeogridCalculator] Loaded collected CSV: {csv_path.name} with shape {df.shape}")
+                print(f"[GeogridCalculator] DataFrame has {len(df.columns)} columns")
                 break
             except Exception as e:
                 print(f"[GeogridCalculator] Error reading {csv_path.name}: {e}")
                 continue
+    
     if df is None:
         print(f"[GeogridCalculator] No collected CSV found in {collect_base}")
         if collect_base.exists():
             files = list(collect_base.glob('*.csv'))
             print(f"[GeogridCalculator] Available CSVs: {[f.name for f in files]}")
         raise FileNotFoundError("No collected CSV found for geogrid calculation")
-    print(f"[OK] Loaded collected dataframe for geogrid: shape={df.shape}")
+    
+    print(f"[OK] Loaded collected dataframe for geogrid from '{loaded_csv}': shape={df.shape}")
     last_row_with_data = len(df) + 6  # data begins at Excel row 7
     
     # Column letters (Excel columns, 1-indexed)
@@ -218,13 +227,26 @@ def calculate_geogrid_columns(main_carriageway_file, conditions, output_file):
     LA_COL = 313        # Column LA
     LB_COL = 314        # Column LB
     
+    # Check if required columns exist in the loaded DataFrame
+    required_cols = [DL_COL, DS_COL, EE_COL, EJ_COL, FF_COL, FD_COL, FY_COL, FS_COL]
+    missing_cols = [col for col in required_cols if col >= len(df.columns)]
+    if missing_cols:
+        print(f"[WARNING] DataFrame has only {len(df.columns)} columns, but need columns up to {max(required_cols)}")
+        print(f"[WARNING] Missing columns at indices: {missing_cols}")
+        print(f"[WARNING] This CSV may not have formula-calculated columns. Need formula_applier.csv!")
+        print(f"[WARNING] Geogrid values will be 0 because source columns are missing.")
+    
     # Data starts from row 7
     start_row = 7
     
     print(f"\n[OK] Calculating geogrid values from row {start_row} to row {last_row_with_data}...")
+    print(f"[OK] Active conditions: E9_GSB={conditions['e9_geogrid_gsb']}, E10_WMM={conditions['e10_geogrid_wmm']}, B9_GSB={conditions['b9_geogrid_gsb']}, B10_WMM={conditions['b10_geogrid_wmm']}")
+    print(f"[OK] DataFrame has {len(df.columns)} columns available for reading")
     
     row_count = 0
     modifications = []
+    non_zero_count = 0
+    
     for row_idx in range(start_row, last_row_with_data + 1):
         # Map Excel row to DataFrame index
         df_idx = row_idx - 7
@@ -236,13 +258,25 @@ def calculate_geogrid_columns(main_carriageway_file, conditions, output_file):
         
         # Get column values from DataFrame (with column bounds checking)
         def _safe(v):
-            return v if _pd.notna(v) else 0
+            """Convert value to float, return 0 if not possible"""
+            if _pd.isna(v):
+                return 0.0
+            try:
+                return float(v)
+            except (ValueError, TypeError):
+                return 0.0
         
         def _safe_col(row_idx, col_idx):
-            """Safely get column value, return 0 if column doesn't exist"""
+            """Safely get column value, return 0.0 if column doesn't exist"""
             if 0 <= row_idx < len(df) and 0 <= col_idx < len(df.columns):
                 return _safe(df.iloc[row_idx, col_idx])
-            return 0
+            return 0.0
+        
+        # Convert length to float
+        try:
+            length = float(length) if length not in [None, '', 0] else 0.0
+        except (ValueError, TypeError):
+            length = 0.0
         
         dl_val = _safe_col(df_idx, DL_COL)
         ds_val = _safe_col(df_idx, DS_COL)
@@ -253,25 +287,33 @@ def calculate_geogrid_columns(main_carriageway_file, conditions, output_file):
         fy_val = _safe_col(df_idx, FY_COL)
         fs_val = _safe_col(df_idx, FS_COL)
         
-        # Calculate KY
-        ky_val = ((dl_val if conditions['e9_geogrid_gsb'] else 0) + 
-                  (ds_val if conditions['e10_geogrid_wmm'] else 0)) * length
+        # Calculate KY (ensure float result)
+        ky_val = float(((dl_val if conditions['e9_geogrid_gsb'] else 0.0) + 
+                        (ds_val if conditions['e10_geogrid_wmm'] else 0.0)) * length)
         modifications.append({'sheet': 'Quantity', 'row': row_idx, 'col': KY_COL, 'value': ky_val})
         
         # Calculate KZ
-        kz_val = ((ee_val if conditions['b9_geogrid_gsb'] else 0) + 
-                  (ej_val if conditions['b10_geogrid_wmm'] else 0)) * length
+        kz_val = float(((ee_val if conditions['b9_geogrid_gsb'] else 0.0) + 
+                        (ej_val if conditions['b10_geogrid_wmm'] else 0.0)) * length)
         modifications.append({'sheet': 'Quantity', 'row': row_idx, 'col': KZ_COL, 'value': kz_val})
         
         # Calculate LA
-        la_val = ((ff_val if conditions['b9_geogrid_gsb'] else 0) + 
-                  (fd_val if conditions['b10_geogrid_wmm'] else 0)) * length
+        la_val = float(((ff_val if conditions['b9_geogrid_gsb'] else 0.0) + 
+                        (fd_val if conditions['b10_geogrid_wmm'] else 0.0)) * length)
         modifications.append({'sheet': 'Quantity', 'row': row_idx, 'col': LA_COL, 'value': la_val})
         
         # Calculate LB
-        lb_val = ((fy_val if conditions['e9_geogrid_gsb'] else 0) + 
-                  (fs_val if conditions['e10_geogrid_wmm'] else 0)) * length
+        lb_val = float(((fy_val if conditions['e9_geogrid_gsb'] else 0.0) + 
+                        (fs_val if conditions['e10_geogrid_wmm'] else 0.0)) * length)
         modifications.append({'sheet': 'Quantity', 'row': row_idx, 'col': LB_COL, 'value': lb_val})
+        
+        # Track non-zero values
+        if ky_val != 0 or kz_val != 0 or la_val != 0 or lb_val != 0:
+            non_zero_count += 1
+            # Log first few non-zero calculations for debugging
+            if non_zero_count <= 3:
+                print(f"  Row {row_idx}: KY={ky_val:.2f}, KZ={kz_val:.2f}, LA={la_val:.2f}, LB={lb_val:.2f}")
+                print(f"    Source: DL={dl_val:.2f}, DS={ds_val:.2f}, EE={ee_val:.2f}, EJ={ej_val:.2f}, FF={ff_val:.2f}, FD={fd_val:.2f}, FY={fy_val:.2f}, FS={fs_val:.2f}, Length={length:.2f}")
         
         row_count += 1
         
@@ -280,11 +322,18 @@ def calculate_geogrid_columns(main_carriageway_file, conditions, output_file):
             print(f"  Processed {row_count} rows...")
     
     print(f"[OK] Geogrid calculations completed for {row_count} rows")
+    print(f"[OK] Non-zero geogrid values found in {non_zero_count} rows")
+    
+    if non_zero_count == 0:
+        print("[WARNING] All geogrid values are 0! This may indicate:")
+        print("  1. No geogrid conditions are active (all conditions are False)")
+        print("  2. Source columns (DL, DS, EE, EJ, FF, FD, FY, FS) are empty/zero")
+        print("  3. Wrong CSV loaded (need formula_applier.csv with calculated values)")
     
     # Store modifications via collector for single-write later
     collector = get_collector()
     collector.add_workbook_modifications('pavement_input_with_internal', modifications)
-    print("[OK] Stored geogrid modifications for later writing")
+    print(f"[OK] Stored {len(modifications)} geogrid modifications for later writing")
     
     return row_count
 

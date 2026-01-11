@@ -74,58 +74,74 @@ def validate_template():
 
 def test_gcs_connection():
     """
-    Test GCS connection and permissions
+    Test GCS connection and permissions with local storage fallback info
     Returns: (success: bool, message: str)
     """
     try:
         print("\n" + "="*80)
-        print("TESTING GCS CONNECTION")
+        print("TESTING STORAGE CONFIGURATION")
         print("="*80)
+        
+        # Initialize GCS handler
+        print("\n[INIT] Initializing storage handler...")
+        gcs = get_gcs_handler()
+        
+        # Check local storage
+        print("\n[LOCAL STORAGE] Checking local storage...")
+        try:
+            local_dir = gcs.local_storage_dir
+            local_dir.mkdir(parents=True, exist_ok=True)
+            print(f"✓ Local storage directory ready: {local_dir}")
+        except Exception as e:
+            print(f"✗ Local storage not available: {str(e)}")
+        
+        # Check GCS availability
+        if not gcs.gcs_enabled:
+            print("\n[GCS] GCS is DISABLED or not configured")
+            print("  Using LOCAL STORAGE for all file operations")
+            print("\n" + "="*80)
+            print("STORAGE TEST: Local storage will be used (GCS not available)")
+            print("="*80)
+            return True, "Using local storage (GCS not configured)"
+        
+        # GCS is enabled, run full tests
+        print("\n[GCS] GCS is ENABLED - running GCS tests...")
         
         # Get GCS configuration from environment
         bucket_name = os.getenv('GCS_BUCKET_NAME')
         project_id = os.getenv('GCS_PROJECT_ID')
         credentials_path = os.getenv('GCS_CREDENTIALS_PATH')
         
-        # Check if environment variables are set
-        if not bucket_name:
-            return False, "GCS_BUCKET_NAME not set in environment variables"
-        if not project_id:
-            return False, "GCS_PROJECT_ID not set in environment variables"
-        if not credentials_path:
-            return False, "GCS_CREDENTIALS_PATH not set in environment variables"
-        
         print(f"✓ Bucket Name: {bucket_name}")
         print(f"✓ Project ID: {project_id}")
         print(f"✓ Credentials Path: {credentials_path}")
         
-        # Check if credentials file exists
-        if not os.path.exists(credentials_path):
-            return False, f"Credentials file not found at: {credentials_path}"
-        print(f"✓ Credentials file exists")
+        # Test GCS connection
+        print("\n[TEST 1] Testing GCS bucket access...")
+        try:
+            if gcs.bucket.exists():
+                print(f"✓ SUCCESS: Connected to bucket '{bucket_name}'")
+            else:
+                print(f"✗ WARNING: Bucket '{bucket_name}' does not exist or is not accessible")
+                print("  Will fallback to local storage")
+                return True, "GCS bucket not accessible, using local storage fallback"
+        except Exception as e:
+            print(f"✗ WARNING: Cannot access GCS bucket: {str(e)}")
+            print("  Will fallback to local storage")
+            return True, f"GCS fallback active: {str(e)}"
         
-        # Initialize GCS handler
-        print("\n[TEST 1] Initializing GCS client...")
-        gcs = get_gcs_handler()
-        print("✓ GCS client initialized successfully")
-        
-        # Test 2: Check if bucket exists and is accessible
-        print("\n[TEST 2] Checking bucket access...")
-        if gcs.bucket.exists():
-            print(f"✓ SUCCESS: Connected to bucket '{bucket_name}'")
-        else:
-            return False, f"Bucket '{bucket_name}' does not exist or is not accessible"
-        
-        # Test 3: Check read permissions
-        print("\n[TEST 3] Checking read permissions...")
+        # Test 2: Check read permissions
+        print("\n[TEST 2] Checking GCS read permissions...")
         try:
             blobs = list(gcs.bucket.list_blobs(max_results=1))
             print(f"✓ SUCCESS: Can read from bucket")
         except Exception as e:
-            return False, f"Cannot read from bucket: {str(e)}"
+            print(f"✗ WARNING: Cannot read from bucket: {str(e)}")
+            print("  Will fallback to local storage")
+            return True, f"GCS read failed, using local storage: {str(e)}"
         
-        # Test 4: Check write permissions (create and delete a test file)
-        print("\n[TEST 4] Checking write permissions...")
+        # Test 3: Check write permissions
+        print("\n[TEST 3] Checking GCS write permissions...")
         try:
             test_file_path = '_test_connection.txt'
             test_blob = gcs.bucket.blob(test_file_path)
@@ -137,10 +153,12 @@ def test_gcs_connection():
             test_blob.delete()
             print(f"✓ SUCCESS: Can delete from bucket")
         except Exception as e:
-            return False, f"Cannot write/delete from bucket: {str(e)}"
+            print(f"✗ WARNING: Cannot write/delete from bucket: {str(e)}")
+            print("  Will fallback to local storage")
+            return True, f"GCS write failed, using local storage: {str(e)}"
         
-        # Test 5: Check session directory structure
-        print("\n[TEST 5] Checking session directory structure...")
+        # Test 4: Check session directory structure
+        print("\n[TEST 4] Testing session directory structure...")
         try:
             test_session_id = '_test_session'
             test_paths = [
@@ -155,13 +173,15 @@ def test_gcs_connection():
             
             print(f"✓ SUCCESS: Can create/delete in session directories")
         except Exception as e:
-            return False, f"Cannot manage session directories: {str(e)}"
+            print(f"✗ WARNING: Cannot manage session directories: {str(e)}")
+            print("  Will fallback to local storage")
+            return True, f"GCS session directories failed, using local storage: {str(e)}"
         
         print("\n" + "="*80)
-        print("GCS CONNECTION TEST: ALL TESTS PASSED ✓")
+        print("STORAGE TEST: GCS PRIMARY + LOCAL STORAGE FALLBACK ✓")
         print("="*80)
         
-        return True, "GCS connection successful"
+        return True, "GCS and local storage both available"
         
     except Exception as e:
         error_msg = f"GCS connection test failed: {str(e)}"
@@ -316,14 +336,15 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
                 started_at = datetime.fromisoformat(session['processing_info']['started_at'])
                 execution_time = (datetime.now(timezone.utc) - started_at).total_seconds()
                 
-                # Upload final file to GCS (single upload after all processing)
+                # Upload final file to GCS/local (single upload after all processing)
                 if session_output_file.exists():
                     from src.utils.gcs_utils import get_gcs_handler
                     gcs = get_gcs_handler()
                     output_filename = session_output_file.name
                     output_gcs_path = gcs.get_gcs_path(session_id, output_filename, 'output')
-                    gcs.upload_file(str(session_output_file), output_gcs_path)
-                    print(f"[GCS] Final upload completed: gs://{gcs.bucket.name}/{output_gcs_path}")
+                    upload_result = gcs.upload_file(str(session_output_file), output_gcs_path)
+                    storage_type = upload_result.get('storage', 'unknown')
+                    print(f"[{storage_type.upper()}] Final output upload completed: {upload_result.get('gcs_path', upload_result.get('local_path'))}")
                 
                 # Update session with output file info
                 output_info = {
@@ -381,18 +402,25 @@ def health_check():
         except Exception as e:
             mongodb_message = str(e)
         
-        # Check GCS connection
+        # Check storage configuration
         gcs_healthy = False
         gcs_message = ""
+        storage_type = "unknown"
         try:
+            gcs = get_gcs_handler()
             gcs_success, gcs_msg = test_gcs_connection()
             gcs_healthy = gcs_success
             gcs_message = gcs_msg
+            
+            if gcs.gcs_enabled:
+                storage_type = "GCS (primary) + Local (fallback)"
+            else:
+                storage_type = "Local only"
         except Exception as e:
             gcs_message = str(e)
         
-        # Determine overall health
-        all_healthy = template_exists and mongodb_healthy and gcs_healthy
+        # Determine overall health (local storage fallback makes system resilient)
+        all_healthy = template_exists and mongodb_healthy
         
         return jsonify({
             'status': 'healthy' if all_healthy else 'degraded',
@@ -413,10 +441,12 @@ def health_check():
                     'status': 'ok' if mongodb_healthy else 'error',
                     'message': mongodb_message
                 },
-                'gcs': {
-                    'status': 'ok' if gcs_healthy else 'error',
+                'storage': {
+                    'status': 'ok' if gcs_healthy else 'warning',
+                    'type': storage_type,
                     'message': gcs_message,
-                    'bucket': os.getenv('GCS_BUCKET_NAME', 'not configured')
+                    'gcs_configured': os.getenv('GCS_BUCKET_NAME', 'not configured'),
+                    'local_storage_enabled': True
                 }
             }
         }), 200
@@ -702,9 +732,9 @@ def upload_files():
                 file.save(temp_path)
                 temp_file.close()
                 
-                # Upload to GCS
+                # Upload to GCS with fallback to local storage
                 gcs_path = gcs.get_gcs_path(session_id, expected_filename, 'data')
-                gcs.upload_file(temp_path, gcs_path)
+                upload_result = gcs.upload_file(temp_path, gcs_path)
                 
                 # Clean up temp file
                 os.remove(temp_path)
@@ -712,10 +742,13 @@ def upload_files():
                 uploaded_files[key] = {
                     'filename': expected_filename,
                     'gcs_path': gcs_path,
+                    'local_path': upload_result.get('local_path'),
+                    'storage': upload_result.get('storage'),
                     'uploaded_at': datetime.now(timezone.utc).isoformat()
                 }
                 
-                print(f"✓ Uploaded: {expected_filename} → gs://{gcs.bucket.name}/{gcs_path}")
+                storage_type = upload_result.get('storage', 'unknown')
+                print(f"✓ Uploaded: {expected_filename} → [{storage_type.upper()}] {upload_result.get('gcs_path', upload_result.get('local_path'))}")
         
         except Exception as upload_error:
             # If upload fails, clean up session and uploaded files
@@ -732,17 +765,17 @@ def upload_files():
             session_manager.delete_session(session_id)
             
             return jsonify({
-                'error': 'File upload to GCS failed',
+                'error': 'File upload failed',
                 'details': upload_errors,
                 'session_id': session_id,
                 'message': 'Session and files have been cleaned up'
             }), 500
         
-        # Update session with GCS file information
+        # Update session with file information (including storage type)
+        storage_type = uploaded_files[list(uploaded_files.keys())[0]].get('storage', 'unknown')
         session_manager.update_session_data(session_id, {
             'uploaded_files': uploaded_files,
-            'gcs_bucket': os.getenv('GCS_BUCKET_NAME'),
-            'storage_type': 'gcs'
+            'storage_type': storage_type
         })
         
         print(f"\n{'='*80}")
