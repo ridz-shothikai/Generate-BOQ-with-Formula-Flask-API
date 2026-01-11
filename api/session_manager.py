@@ -173,7 +173,7 @@ class SessionManager:
             sort_by: Field to sort by (default: session_id)
             sort_order: 1 for ascending, -1 for descending
             status_filter: Filter by status (optional)
-            search_filter: Search in session_id (optional)
+            search_filter: Search in session_id and project_name (optional)
             project_id_filter: Filter by project_id (optional)
         
         Returns:
@@ -189,7 +189,11 @@ class SessionManager:
             query_filter['project_id'] = project_id_filter
         
         if search_filter:
-            query_filter['session_id'] = {'$regex': search_filter, '$options': 'i'}
+            # Search in both session_id and project_name
+            query_filter['$or'] = [
+                {'session_id': {'$regex': search_filter, '$options': 'i'}},
+                {'project_name': {'$regex': search_filter, '$options': 'i'}}
+            ]
         
         sessions_cursor = self.sessions.find(query_filter).sort(sort_by, sort_order).skip(skip).limit(limit)
         

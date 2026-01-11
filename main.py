@@ -1826,9 +1826,12 @@ def root():
                 'description': 'Get list of all sessions (paginated) with GCS download URLs for uploaded files',
                 'query_parameters': {
                     'page': 'integer (optional, default: 1)',
-                    'limit': 'integer (optional, default: 10, max: 100)'
+                    'limit': 'integer (optional, default: 10, max: 100)',
+                    'search': 'string (optional, searches in session_id and project_name)',
+                    'status': 'string (optional, filters by status)',
+                    'project_id': 'string (optional, filters by project_id)'
                 },
-                'usage': 'curl -X GET "http://localhost:5000/api/sessions?page=1&limit=10"'
+                'usage': 'curl -X GET "http://localhost:5000/api/sessions?page=1&limit=10&search=project_name"'
             },
             'session_status': {
                 'method': 'GET',
