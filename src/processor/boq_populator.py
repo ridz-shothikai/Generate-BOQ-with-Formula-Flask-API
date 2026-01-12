@@ -62,23 +62,26 @@ try:
     wb = load_workbook(boq_output_path)
     sheet = wb['BOQ']
     
-    populated_count = 0
+    # OPTIMIZATION: Batch-generate all formula assignments before writing
+    log_debug(f"Batch-generating formulas for {len(formula_mapping)} items...")
+    formula_batch = []
+    
     for item_code, formula_data in formula_mapping.items():
         excel_row = formula_data['excel_row']
         formula_E = formula_data['column_E']
         formula_F = formula_data['column_F']
         
-        # Write formulas to the BOQ sheet
         if formula_E:
-            sheet[f'E{excel_row}'] = formula_E
-        
+            formula_batch.append((f'E{excel_row}', formula_E))
         if formula_F:
-            sheet[f'F{excel_row}'] = formula_F
-        
-        populated_count += 1
-        
-        if populated_count % 50 == 0:
-            log_debug(f"Processed {populated_count} items...")
+            formula_batch.append((f'F{excel_row}', formula_F))
+    
+    # Batch-write all formulas
+    log_debug(f"Writing {len(formula_batch)} formulas to BOQ sheet...")
+    for cell_address, formula in formula_batch:
+        sheet[cell_address] = formula
+    
+    populated_count = len(formula_mapping)
 
     # Save the workbook
     wb.save(boq_output_path)

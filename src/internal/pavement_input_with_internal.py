@@ -207,51 +207,71 @@ def calculate_geogrid_columns(main_carriageway_file, conditions, output_file):
     
     print(f"\n[OK] Calculating geogrid values from row {start_row} to row {last_row_with_data}...")
     
+    # OPTIMIZATION: Pre-read all column data into lists (much faster than cell-by-cell access)
+    print(f"[OPTIMIZATION] Reading column data...")
+    length_vals = [ws.cell(r, LENGTH_COL).value for r in range(start_row, last_row_with_data + 1)]
+    dl_vals = [ws.cell(r, DL_COL).value for r in range(start_row, last_row_with_data + 1)]
+    ds_vals = [ws.cell(r, DS_COL).value for r in range(start_row, last_row_with_data + 1)]
+    ee_vals = [ws.cell(r, EE_COL).value for r in range(start_row, last_row_with_data + 1)]
+    ej_vals = [ws.cell(r, EJ_COL).value for r in range(start_row, last_row_with_data + 1)]
+    ff_vals = [ws.cell(r, FF_COL).value for r in range(start_row, last_row_with_data + 1)]
+    fd_vals = [ws.cell(r, FD_COL).value for r in range(start_row, last_row_with_data + 1)]
+    fy_vals = [ws.cell(r, FY_COL).value for r in range(start_row, last_row_with_data + 1)]
+    fs_vals = [ws.cell(r, FS_COL).value for r in range(start_row, last_row_with_data + 1)]
+    
+    # Pre-compute condition multipliers (avoid repeated condition checks in loop)
+    e9_mult = 1 if conditions['e9_geogrid_gsb'] else 0
+    e10_mult = 1 if conditions['e10_geogrid_wmm'] else 0
+    b9_mult = 1 if conditions['b9_geogrid_gsb'] else 0
+    b10_mult = 1 if conditions['b10_geogrid_wmm'] else 0
+    
+    # Batch calculate all values
+    print(f"[OPTIMIZATION] Calculating {len(length_vals)} rows...")
+    ky_results = []
+    kz_results = []
+    la_results = []
+    lb_results = []
     row_count = 0
-    for row_idx in range(start_row, last_row_with_data + 1):
-        # Get length value
-        length_cell = ws.cell(row_idx, LENGTH_COL)
-        length = length_cell.value if length_cell.value is not None else 0
-        
-        # Skip empty rows (if length column is empty, skip this row)
+    
+    for i, length in enumerate(length_vals):
+        # Skip empty rows
         if length == 0 or length is None or length == '':
+            ky_results.append(None)
+            kz_results.append(None)
+            la_results.append(None)
+            lb_results.append(None)
             continue
         
-        # Get column values
-        dl_val = ws.cell(row_idx, DL_COL).value or 0
-        ds_val = ws.cell(row_idx, DS_COL).value or 0
-        ee_val = ws.cell(row_idx, EE_COL).value or 0
-        ej_val = ws.cell(row_idx, EJ_COL).value or 0
-        ff_val = ws.cell(row_idx, FF_COL).value or 0
-        fd_val = ws.cell(row_idx, FD_COL).value or 0
-        fy_val = ws.cell(row_idx, FY_COL).value or 0
-        fs_val = ws.cell(row_idx, FS_COL).value or 0
+        # Get values with None-safe defaults
+        dl_val = dl_vals[i] or 0
+        ds_val = ds_vals[i] or 0
+        ee_val = ee_vals[i] or 0
+        ej_val = ej_vals[i] or 0
+        ff_val = ff_vals[i] or 0
+        fd_val = fd_vals[i] or 0
+        fy_val = fy_vals[i] or 0
+        fs_val = fs_vals[i] or 0
         
-        # Calculate KY
-        ky_val = ((dl_val if conditions['e9_geogrid_gsb'] else 0) + 
-                  (ds_val if conditions['e10_geogrid_wmm'] else 0)) * length
-        ws.cell(row_idx, KY_COL).value = ky_val
+        # Calculate values using pre-computed multipliers
+        ky_val = (dl_val * e9_mult + ds_val * e10_mult) * length
+        kz_val = (ee_val * b9_mult + ej_val * b10_mult) * length
+        la_val = (ff_val * b9_mult + fd_val * b10_mult) * length
+        lb_val = (fy_val * e9_mult + fs_val * e10_mult) * length
         
-        # Calculate KZ
-        kz_val = ((ee_val if conditions['b9_geogrid_gsb'] else 0) + 
-                  (ej_val if conditions['b10_geogrid_wmm'] else 0)) * length
-        ws.cell(row_idx, KZ_COL).value = kz_val
-        
-        # Calculate LA
-        la_val = ((ff_val if conditions['b9_geogrid_gsb'] else 0) + 
-                  (fd_val if conditions['b10_geogrid_wmm'] else 0)) * length
-        ws.cell(row_idx, LA_COL).value = la_val
-        
-        # Calculate LB
-        lb_val = ((fy_val if conditions['e9_geogrid_gsb'] else 0) + 
-                  (fs_val if conditions['e10_geogrid_wmm'] else 0)) * length
-        ws.cell(row_idx, LB_COL).value = lb_val
-        
+        ky_results.append(ky_val)
+        kz_results.append(kz_val)
+        la_results.append(la_val)
+        lb_results.append(lb_val)
         row_count += 1
-        
-        # Progress indicator
-        if row_count % 200 == 0:
-            print(f"  Processed {row_count} rows...")
+    
+    # Batch-write all results
+    print(f"[OPTIMIZATION] Writing {row_count} rows to worksheet...")
+    for i, row_idx in enumerate(range(start_row, last_row_with_data + 1)):
+        if ky_results[i] is not None:
+            ws.cell(row_idx, KY_COL).value = ky_results[i]
+            ws.cell(row_idx, KZ_COL).value = kz_results[i]
+            ws.cell(row_idx, LA_COL).value = la_results[i]
+            ws.cell(row_idx, LB_COL).value = lb_results[i]
     
     print(f"[OK] Geogrid calculations completed for {row_count} rows")
     

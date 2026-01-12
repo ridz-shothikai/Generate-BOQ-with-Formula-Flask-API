@@ -143,18 +143,28 @@ class FormulaApplier:
         output_sheet = output_wb[output_sheet_name]
         
         # Apply formulas to output sheet starting from start_row
-        total_count = 0
+        # OPTIMIZATION: Batch-generate all formulas before writing
+        print(f"Batch-generating {len(data_rows)} × {len(formulas)} = {len(data_rows) * len(formulas)} formulas...")
+        
+        formula_batch = []
         output_row = start_row
         
         for input_row_num in data_rows:
             for col_letter, formula_template in formulas.items():
                 if formula_template:
                     formula = formula_template.replace("{row}", str(input_row_num))
-                    output_sheet[f"{col_letter}{output_row}"] = formula
-                    total_count += 1
+                    formula_batch.append((f"{col_letter}{output_row}", formula))
             output_row += 1
         
+        # Batch-write all formulas in a single pass
+        print(f"Writing {len(formula_batch)} formulas to worksheet...")
+        for cell_address, formula in formula_batch:
+            output_sheet[cell_address] = formula
+        
+        total_count = len(formula_batch)
+        
         # Save the output workbook
+        print(f"Saving workbook...")
         output_wb.save(self.output_excel_path)
         input_wb.close()
         output_wb.close()
@@ -215,15 +225,25 @@ class FormulaApplier:
         output_sheet = output_wb[output_sheet_name]
         
         # Apply formulas using custom mapping
-        total_count = 0
+        # OPTIMIZATION: Batch-generate all formulas before writing
+        print(f"Batch-generating {len(row_mapping)} × {len(formulas)} formulas...")
+        
+        formula_batch = []
         for input_row, output_row in row_mapping.items():
             for col_letter, formula_template in formulas.items():
                 if formula_template:
                     formula = formula_template.replace("{row}", str(input_row))
-                    output_sheet[f"{col_letter}{output_row}"] = formula
-                    total_count += 1
+                    formula_batch.append((f"{col_letter}{output_row}", formula))
+        
+        # Batch-write all formulas
+        print(f"Writing {len(formula_batch)} formulas to worksheet...")
+        for cell_address, formula in formula_batch:
+            output_sheet[cell_address] = formula
+        
+        total_count = len(formula_batch)
         
         # Save the output workbook
+        print(f"Saving workbook...")
         output_wb.save(self.output_excel_path)
         input_wb.close()
         output_wb.close()
