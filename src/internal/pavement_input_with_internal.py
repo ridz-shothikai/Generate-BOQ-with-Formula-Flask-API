@@ -170,7 +170,7 @@ def calculate_geogrid_columns(main_carriageway_file, conditions, output_file):
     
     from openpyxl import load_workbook
     
-    # Load workbook
+    # Load workbook normally (not data_only) to preserve formulas when saving
     wb = load_workbook(main_carriageway_file)
     ws = wb['Quantity']
     
@@ -207,17 +207,36 @@ def calculate_geogrid_columns(main_carriageway_file, conditions, output_file):
     
     print(f"\n[OK] Calculating geogrid values from row {start_row} to row {last_row_with_data}...")
     
+    # Helper to safely coerce values to float (handles None, blanks, numeric strings, formulas)
+    def to_float(val):
+        if val is None:
+            return 0.0
+        if isinstance(val, (int, float)):
+            return float(val)
+        # If it's a string (including formula strings like "=SUM(...)"), try to parse
+        # For formula strings, this will fail and return 0.0, which is safe for our calculation
+        try:
+            s = str(val).strip().replace(',', '')
+            if not s:
+                return 0.0
+            # Skip formula strings - they haven't been calculated yet
+            if s.startswith('='):
+                return 0.0
+            return float(s)
+        except (ValueError, TypeError):
+            return 0.0
+    
     # OPTIMIZATION: Pre-read all column data into lists (much faster than cell-by-cell access)
-    print(f"[OPTIMIZATION] Reading column data...")
-    length_vals = [ws.cell(r, LENGTH_COL).value for r in range(start_row, last_row_with_data + 1)]
-    dl_vals = [ws.cell(r, DL_COL).value for r in range(start_row, last_row_with_data + 1)]
-    ds_vals = [ws.cell(r, DS_COL).value for r in range(start_row, last_row_with_data + 1)]
-    ee_vals = [ws.cell(r, EE_COL).value for r in range(start_row, last_row_with_data + 1)]
-    ej_vals = [ws.cell(r, EJ_COL).value for r in range(start_row, last_row_with_data + 1)]
-    ff_vals = [ws.cell(r, FF_COL).value for r in range(start_row, last_row_with_data + 1)]
-    fd_vals = [ws.cell(r, FD_COL).value for r in range(start_row, last_row_with_data + 1)]
-    fy_vals = [ws.cell(r, FY_COL).value for r in range(start_row, last_row_with_data + 1)]
-    fs_vals = [ws.cell(r, FS_COL).value for r in range(start_row, last_row_with_data + 1)]
+    print("[OPTIMIZATION] Reading column data...")
+    length_vals = [to_float(ws.cell(r, LENGTH_COL).value) for r in range(start_row, last_row_with_data + 1)]
+    dl_vals = [to_float(ws.cell(r, DL_COL).value) for r in range(start_row, last_row_with_data + 1)]
+    ds_vals = [to_float(ws.cell(r, DS_COL).value) for r in range(start_row, last_row_with_data + 1)]
+    ee_vals = [to_float(ws.cell(r, EE_COL).value) for r in range(start_row, last_row_with_data + 1)]
+    ej_vals = [to_float(ws.cell(r, EJ_COL).value) for r in range(start_row, last_row_with_data + 1)]
+    ff_vals = [to_float(ws.cell(r, FF_COL).value) for r in range(start_row, last_row_with_data + 1)]
+    fd_vals = [to_float(ws.cell(r, FD_COL).value) for r in range(start_row, last_row_with_data + 1)]
+    fy_vals = [to_float(ws.cell(r, FY_COL).value) for r in range(start_row, last_row_with_data + 1)]
+    fs_vals = [to_float(ws.cell(r, FS_COL).value) for r in range(start_row, last_row_with_data + 1)]
     
     # Pre-compute condition multipliers (avoid repeated condition checks in loop)
     e9_mult = 1 if conditions['e9_geogrid_gsb'] else 0
@@ -242,21 +261,21 @@ def calculate_geogrid_columns(main_carriageway_file, conditions, output_file):
             lb_results.append(None)
             continue
         
-        # Get values with None-safe defaults
-        dl_val = dl_vals[i] or 0
-        ds_val = ds_vals[i] or 0
-        ee_val = ee_vals[i] or 0
-        ej_val = ej_vals[i] or 0
-        ff_val = ff_vals[i] or 0
-        fd_val = fd_vals[i] or 0
-        fy_val = fy_vals[i] or 0
-        fs_val = fs_vals[i] or 0
+        # Values are already coerced to float
+        dl_val = dl_vals[i]
+        ds_val = ds_vals[i]
+        ee_val = ee_vals[i]
+        ej_val = ej_vals[i]
+        ff_val = ff_vals[i]
+        fd_val = fd_vals[i]
+        fy_val = fy_vals[i]
+        fs_val = fs_vals[i]
         
         # Calculate values using pre-computed multipliers
-        ky_val = (dl_val * e9_mult + ds_val * e10_mult) * length
-        kz_val = (ee_val * b9_mult + ej_val * b10_mult) * length
-        la_val = (ff_val * b9_mult + fd_val * b10_mult) * length
-        lb_val = (fy_val * e9_mult + fs_val * e10_mult) * length
+        ky_val = (dl_val * float(e9_mult) + ds_val * float(e10_mult)) * length
+        kz_val = (ee_val * float(b9_mult) + ej_val * float(b10_mult)) * length
+        la_val = (ff_val * float(b9_mult) + fd_val * float(b10_mult)) * length
+        lb_val = (fy_val * float(e9_mult) + fs_val * float(e10_mult)) * length
         
         ky_results.append(ky_val)
         kz_results.append(kz_val)
