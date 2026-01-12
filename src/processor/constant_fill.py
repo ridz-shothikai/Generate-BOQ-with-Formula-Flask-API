@@ -14,6 +14,7 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.append(project_root)
 
 from src.utils.gcs_utils import get_gcs_handler
+from src.utils.excel_writer_utils import get_workbook_manager
 
 load_dotenv()
 if sys.platform == "win32":
@@ -110,13 +111,22 @@ def fill_constant_columns(main_carriageway_file, constants, output_file):
         
         print(f"  [OK] All {len(df)} rows set to {value}")
     
-    # Save to Excel using ExcelWriter with overlay mode
-    print(f"\n[OK] Saving to {output_file}...")
+    # Save to Excel using optimized writer
+    print(f"\n[OPTIMIZATION] Using direct openpyxl writing...")
+    print(f"[OK] Saving to {output_file}...")
     
-    with pd.ExcelWriter(output_file, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-        df.to_excel(writer, sheet_name='Quantity', startrow=6, startcol=0, index=False, header=False)
+    manager = get_workbook_manager(output_file)
+    if not manager.is_open:
+        manager.open()
+    
+    manager.write_dataframe(df, 'Quantity', start_row=7, start_col=0, include_header=False)
     
     print("[OK] Saved!")
+    
+    # CRITICAL: Save and close because we run in subprocess
+    manager.close()
+    print("[OPTIMIZATION] Saved and closed (subprocess mode)")
+    
     print(f"  Total columns: {len(df.columns)}")
     
     return df

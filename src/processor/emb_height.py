@@ -15,6 +15,7 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.append(project_root)
 
 from src.utils.gcs_utils import get_gcs_handler
+from src.utils.excel_writer_utils import get_workbook_manager
 
 load_dotenv()
 if sys.platform == "win32":
@@ -200,13 +201,21 @@ def populate_embankment_heights(main_carriageway_file, emb_dict, output_file):
         match_pct = matched / (matched + unmatched) * 100
         print("  Match rate: %.1f%%" % match_pct)
     
-    # Save to Excel - write to Quantity sheet starting from row 7 (0-indexed row 6)
-    print("\n[OK] Writing to", output_file, "(Quantity sheet, starting row 7)...")
+    # Save to Excel using optimized writer
+    print("\n[OPTIMIZATION] Using direct openpyxl writing...")
+    print("[OK] Writing to", output_file, "(Quantity sheet, starting row 7)...")
     
-    with pd.ExcelWriter(output_file, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-        df.to_excel(writer, sheet_name='Quantity', startrow=6, startcol=0, index=False, header=False)
+    manager = get_workbook_manager(output_file)
+    if not manager.is_open:
+        manager.open()
+    
+    manager.write_dataframe(df, 'Quantity', start_row=7, start_col=0, include_header=False)
     
     print("[OK] Successfully written", len(df), "rows starting from row 7")
+    
+    # CRITICAL: Save and close because we run in subprocess
+    manager.close()
+    print("[OPTIMIZATION] Saved and closed (subprocess mode)")
     
     return df, matched, unmatched
 

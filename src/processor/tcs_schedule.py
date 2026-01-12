@@ -11,6 +11,7 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.append(project_root)
 
 from src.utils.gcs_utils import get_gcs_handler
+from src.utils.excel_writer_utils import get_workbook_manager
 
 load_dotenv()
 
@@ -78,19 +79,23 @@ print(f"\nData after cleaning:")
 print(df_output.head())
 print(f"Total rows to write: {len(df_output)}")
 
-# Load the copied workbook and write to it
-with pd.ExcelWriter(output_file, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-    # Write to 'Quantity' sheet starting from row 7, column A (0-indexed row 6, col 0)
-    # header=False and index=False ensure only data is written
-    df_output.to_excel(writer, sheet_name='Quantity', startrow=6, startcol=0, index=False, header=False)
+# Use optimized Excel writer (keep-alive pattern)
+print("\n[OPTIMIZATION] Using direct openpyxl writing...")
+manager = get_workbook_manager(output_file)
+if not manager.is_open:
+    manager.open()
+
+manager.write_dataframe(df_output, 'Quantity', start_row=7, start_col=0, include_header=False)
 
 print(f"\nSuccessfully wrote data to {output_file}")
 print(f"Sheet: Quantity")
 print(f"Starting from row: 7, column: A")
 print(f"Total data rows written: {len(df_output)}")
 
-# Note: File will be uploaded to GCS at the end of all processing in main.py
-# No need to upload here for efficiency
+# CRITICAL: Save and close because we run in subprocess
+manager.close()
+print("[OPTIMIZATION] Saved and closed (subprocess mode)")
 
+# Note: File will be saved at the end of all processing in sequential.py
 # Cleanup temp input file only
 os.remove(input_file)
