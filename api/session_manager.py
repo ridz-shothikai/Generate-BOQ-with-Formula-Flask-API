@@ -86,7 +86,7 @@ class SessionManager:
         )
     
     def add_input_file(self, session_id, file_info):
-        """Add input file info to session"""
+        """Add input file info to session""" 
         self.sessions.update_one(
             {'session_id': session_id},
             {'$push': {'input_files': file_info}, '$set': {'updated_at': datetime.now(timezone.utc).isoformat()}}
