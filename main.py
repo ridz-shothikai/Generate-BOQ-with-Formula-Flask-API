@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 import zipfile
 from dotenv import load_dotenv
 import tempfile
+import jwt
+from functools import wraps
 # Import session manager
 from api.session_manager import SessionManager
 
@@ -29,6 +31,41 @@ CORS(app)
 # Configuration
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB per file
+
+# JWT Configuration
+JWT_SECRET = os.getenv('JWT_SECRET', '')
+
+# JWT Validation Decorator
+def token_required(f):
+    """Decorator to validate JWT token from Authorization header"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        
+        # Check for token in Authorization header
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                # Expected format: "Bearer <token>"
+                token = auth_header.split(" ")[1]
+            except IndexError:
+                return jsonify({'error': 'Invalid Authorization header format. Expected: Bearer <token>'}), 401
+        
+        if not token:
+            return jsonify({'error': 'Authorization token is missing'}), 401
+        
+        try:
+            # Verify and decode JWT token
+            jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token has expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        except Exception as e:
+            return jsonify({'error': f'Token validation failed: {str(e)}'}), 401
+        
+        return f(*args, **kwargs)
+    return decorated
 
 # Get project root directory
 PROJECT_ROOT = Path(__file__).parent
@@ -630,6 +667,7 @@ def test_gcs_connection_api():
         }), 500
 
 @app.route('/api/upload-files', methods=['POST'])
+@token_required
 def upload_files():
     """
     Upload 4 required Excel files to GCS and create a new session
@@ -769,6 +807,7 @@ def upload_files():
         }), 500
 
 @app.route('/api/execute-calculation', methods=['POST'])
+@token_required
 def execute_calculation():
     """Execute calculations for main_carriageway only (starts background thread)"""
     try:
@@ -845,6 +884,7 @@ def execute_calculation():
         }), 500
 
 @app.route('/api/execute-calculation-merged', methods=['POST'])
+@token_required
 def execute_calculation_merged():
     """Execute calculations for main_carriageway_and_boq (starts background thread)"""
     try:
@@ -921,6 +961,7 @@ def execute_calculation_merged():
         }), 500
 
 @app.route('/api/execute-calculation-sync', methods=['POST'])
+@token_required
 def execute_calculation_sync():
     """Execute calculations for main_carriageway only (synchronous - waits for completion)"""
     try:
@@ -990,6 +1031,7 @@ def execute_calculation_sync():
         }), 500
 
 @app.route('/api/execute-calculation-sync-merged', methods=['POST'])
+@token_required
 def execute_calculation_sync_merged():
     """Execute calculations for main_carriageway_and_boq (synchronous - waits for completion)"""
     try:
@@ -1059,6 +1101,7 @@ def execute_calculation_sync_merged():
         }), 500
 
 @app.route('/api/session/<session_id>', methods=['DELETE'])
+@token_required
 def delete_session(session_id):
     """
     Delete a session and all its associated data (files in GCS, database record, local files)
@@ -1142,6 +1185,7 @@ def delete_session(session_id):
         }), 500
 
 @app.route('/api/session-status/<session_id>', methods=['GET'])
+@token_required
 def get_session_status(session_id):
     """Get session status with progress"""
     try:
@@ -1200,6 +1244,7 @@ def get_session_status(session_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download-file/<session_id>', methods=['GET'])
+@token_required
 def download_file(session_id):
     """
     Download the generated output file from GCS
@@ -1279,6 +1324,7 @@ def download_file(session_id):
         }), 500
     
 @app.route('/api/preview-file/<session_id>', methods=['GET'])
+@token_required
 def preview_file(session_id):
     """
     Get a preview URL for the generated output file from GCS
@@ -1359,6 +1405,7 @@ def preview_file(session_id):
 
 
 @app.route('/api/download-boq/<session_id>', methods=['GET'])
+@token_required
 def download_boq(session_id):
     """Download BOQ file for session"""
     try:
@@ -1396,6 +1443,7 @@ def download_boq(session_id):
         return jsonify({'error': str(e)}), 500
     
 @app.route('/api/download-session/<session_id>', methods=['GET'])
+@token_required
 def download_session_zip(session_id):
     """Download main carriageway file as ZIP from GCS"""
     try:
@@ -1479,6 +1527,7 @@ def download_session_zip(session_id):
         }), 500
 
 @app.route('/api/output-file-paths/<session_id>', methods=['GET'])
+@token_required
 def get_output_file_paths(session_id):
     """Get output file paths for a session"""
     try:
@@ -1583,6 +1632,7 @@ def get_output_file_paths(session_id):
         }), 500
 
 @app.route('/api/sessions', methods=['GET'])
+@token_required
 def get_all_sessions():
     """Get all sessions with pagination and filtering"""
     try:
@@ -1637,6 +1687,7 @@ def get_all_sessions():
         }), 500
 
 @app.route('/api/analytics', methods=['GET'])
+@token_required
 def get_analytics():
     """Get analytics for BOQ reports - total counts by status"""
     try:
@@ -1694,6 +1745,7 @@ def get_analytics():
         }), 500
 
 @app.route('/api/stats', methods=['GET'])
+@token_required
 def get_stats():
     """
     Get processing statistics - total sessions, completed, processing, and failed
