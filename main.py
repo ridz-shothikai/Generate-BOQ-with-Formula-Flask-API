@@ -59,6 +59,55 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def validate_filename_for_field(filename, field_key):
+    """
+    Validate if the filename matches the expected format for the field
+    
+    Args:
+        filename: Name of the uploaded file
+        field_key: Field identifier (tcs_schedule, tcs_input, emb_height, pavement_input)
+    
+    Returns:
+        (is_valid: bool, error_message: str or None)
+    """
+    filename_lower = filename.lower()
+    
+    # Define expected filename patterns for each field
+    field_patterns = {
+        'tcs_schedule': {
+            'keywords': ['schedule', 'tcs'],
+            'expected': 'TCS Schedule.xlsx'
+        },
+        'tcs_input': {
+            'keywords': ['input', 'tcs'],
+            'expected': 'TCS Input.xlsx'
+        },
+        'emb_height': {
+            'keywords': ['emb', 'height', 'embankment'],
+            'expected': 'Emb Height.xlsx'
+        },
+        'pavement_input': {
+            'keywords': ['pavement', 'input'],
+            'expected': 'Pavement Input.xlsx'
+        }
+    }
+    
+    if field_key not in field_patterns:
+        return True, None
+    
+    pattern = field_patterns[field_key]
+    expected = pattern['expected']
+    keywords = pattern['keywords']
+    
+    # Check if at least one keyword is present in the filename
+    has_keywords = any(keyword in filename_lower for keyword in keywords)
+    
+    if not has_keywords:
+        error_msg = f"Filename '{filename}' does not match field '{field_key}'. Expected filename like: {expected}"
+        return False, error_msg
+    
+    return True, None
+
 def ensure_directories():
     """Ensure required directories exist"""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -662,6 +711,25 @@ def upload_files():
             return jsonify({
                 'error': 'Invalid files',
                 'details': invalid_files
+            }), 400
+        
+        # Validate filename matches the field
+        filename_errors = []
+        for key, expected_filename in REQUIRED_FILES.items():
+            file = request.files[key]
+            is_valid, error_msg = validate_filename_for_field(file.filename, key)
+            if not is_valid:
+                filename_errors.append({
+                    'field': key,
+                    'uploaded_filename': file.filename,
+                    'error': error_msg
+                })
+        
+        if filename_errors:
+            return jsonify({
+                'error': 'Invalid filenames for fields',
+                'filename_errors': filename_errors,
+                'message': 'The uploaded filenames do not match the expected files for each field. Please verify you are uploading the correct files in the correct fields.'
             }), 400
         
         # Create new session
@@ -1770,11 +1838,12 @@ def root():
                 'method': 'POST',
                 'path': '/api/upload-files',
                 'description': 'Upload 4 Excel files and create a new session',
+                'filename_validation': 'Each file is validated to ensure it matches the expected filename pattern for its field',
                 'required_files': [
-                    'tcs_schedule (TCS Schedule.xlsx)',
-                    'tcs_input (TCS Input.xlsx)',
-                    'emb_height (Emb Height.xlsx)',
-                    'pavement_input (Pavement Input.xlsx)'
+                    'tcs_schedule field: Must contain "schedule" and "tcs" in filename (e.g., TCS Schedule.xlsx)',
+                    'tcs_input field: Must contain "input" and "tcs" in filename (e.g., TCS Input.xlsx)',
+                    'emb_height field: Must contain "emb" or "height" or "embankment" in filename (e.g., Emb Height.xlsx)',
+                    'pavement_input field: Must contain "pavement" and "input" in filename (e.g., Pavement Input.xlsx)'
                 ],
                 'usage': 'curl -X POST -F "tcs_schedule=@TCS_Schedule.xlsx" -F "tcs_input=@TCS_Input.xlsx" -F "emb_height=@Emb_Height.xlsx" -F "pavement_input=@Pavement_Input.xlsx" http://localhost:5000/api/upload-files'
             },
