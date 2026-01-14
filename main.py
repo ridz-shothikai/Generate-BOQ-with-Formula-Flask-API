@@ -29,7 +29,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuration
-ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
+ALLOWED_EXTENSIONS = {'xlsx'}
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB per file
 
 # JWT Configuration
@@ -694,12 +694,36 @@ def upload_files():
             if file.filename == '':
                 invalid_files.append(f"{key}: No file selected")
             elif not allowed_file(file.filename):
-                invalid_files.append(f"{key}: Invalid file type (must be .xlsx or .xls)")
+                invalid_files.append(f"{key}: Invalid file type (must be .xlsx)")
         
         if invalid_files:
             return jsonify({
                 'error': 'Invalid files',
                 'details': invalid_files
+            }), 400
+        
+        # Validate filenames match expected field names
+        filename_mismatches = []
+        for key, expected_filename in REQUIRED_FILES.items():
+            file = request.files[key]
+            if file.filename != expected_filename:
+                filename_mismatches.append({
+                    'field': key,
+                    'expected': expected_filename,
+                    'received': file.filename
+                })
+        
+        if filename_mismatches:
+            return jsonify({
+                'error': 'Filename mismatch',
+                'message': 'Uploaded files do not match the expected filenames',
+                'mismatches': filename_mismatches,
+                'expected_files': {
+                    'tcs_schedule': 'TCS Schedule.xlsx',
+                    'tcs_input': 'TCS Input.xlsx',
+                    'emb_height': 'Emb Height.xlsx',
+                    'pavement_input': 'Pavement Input.xlsx'
+                }
             }), 400
         
         # Create new session
