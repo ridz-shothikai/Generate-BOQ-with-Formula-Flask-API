@@ -3,10 +3,7 @@ name: Build and Push Docker Image
 on:
   push:
     branches:
-      - backend_v2
-      - implement_progress
-      - efficient_gcs
-      - round_float
+      - main
   workflow_dispatch:
 
 permissions:
