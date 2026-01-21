@@ -388,6 +388,14 @@ def run_session_processing(session_id, session_data_dir, session_output_file, is
                         {'session_id': session_id},
                         {'$set': {'boq_file': boq_info}}
                     )
+                
+                # Delete local output directory after successful GCS upload
+                try:
+                    if session_output_dir.exists():
+                        shutil.rmtree(session_output_dir)
+                        print(f"[CLEANUP] Deleted local output directory: {session_output_dir}")
+                except Exception as cleanup_error:
+                    print(f"[WARNING] Failed to delete local output directory: {str(cleanup_error)}")
             
             print(f"✓ Session {session_id} processing completed successfully")
             
