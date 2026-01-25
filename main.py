@@ -734,6 +734,27 @@ def upload_files():
                 }
             }), 400
         
+        # Validate required fields
+        category_id = request.form.get('category_id')
+        category_name = request.form.get('category_name')
+        
+        missing_required_fields = []
+        if not category_id or category_id.strip() == '':
+            missing_required_fields.append('category_id')
+        if not category_name or category_name.strip() == '':
+            missing_required_fields.append('category_name')
+        
+        if missing_required_fields:
+            return jsonify({
+                'error': 'Missing required fields',
+                'message': 'Category information is required for calculation',
+                'missing_fields': missing_required_fields,
+                'required_fields': {
+                    'category_id': 'Unique identifier for the category',
+                    'category_name': 'Name of the category'
+                }
+            }), 400
+        
         # Create new session
         session_manager = SessionManager()
         
@@ -743,7 +764,9 @@ def upload_files():
         
         session_data = session_manager.create_session(
             project_name=project_name, 
-            project_id=project_id_val
+            project_id=project_id_val,
+            category_id=category_id,
+            category_name=category_name
         )
         session_id = session_data['session_id']
         
@@ -1249,6 +1272,8 @@ def get_session_status(session_id):
             'session_id': session_id,
             'project_name': session.get('project_name'),
             'project_id': session.get('project_id'),
+            'category_id': session.get('category_id'),
+            'category_name': session.get('category_name'),
             'status': session['status'],
             'created_at': session.get('created_at'),
             'updated_at': session.get('updated_at'),
@@ -1634,6 +1659,10 @@ def get_output_file_paths(session_id):
         # Add session metadata
         response_data = {
             'session_id': session_id,
+            'project_name': session.get('project_name'),
+            'project_id': session.get('project_id'),
+            'category_id': session.get('category_id'),
+            'category_name': session.get('category_name'),
             'status': session.get('status'),
             'created_at': session.get('created_at').isoformat() if session.get('created_at') else None,
             'completed_at': session.get('processing_info', {}).get('completed_at').isoformat() if session.get('processing_info', {}).get('completed_at') else None,
@@ -1676,6 +1705,7 @@ def get_all_sessions():
         status = request.args.get('status', None)
         search = request.args.get('search', None)
         project_id = request.args.get('project_id', None)
+        category_id = request.args.get('category_id', None)
         
         # Validate pagination
         if page < 1:
@@ -1692,7 +1722,8 @@ def get_all_sessions():
             skip=skip, 
             status_filter=status, 
             search_filter=search,
-            project_id_filter=project_id
+            project_id_filter=project_id,
+            category_id_filter=category_id
         )
         total_pages = (total_sessions + limit - 1) // limit  # Ceiling division
 
@@ -1705,7 +1736,8 @@ def get_all_sessions():
             'filters': {
                 'status': status,
                 'search': search,
-                'project_id': project_id
+                'project_id': project_id,
+                'category_id': category_id
             }
         }), 200
         
@@ -1860,7 +1892,15 @@ def root():
                     'emb_height (Emb Height.xlsx)',
                     'pavement_input (Pavement Input.xlsx)'
                 ],
-                'usage': 'curl -X POST -F "tcs_schedule=@TCS_Schedule.xlsx" -F "tcs_input=@TCS_Input.xlsx" -F "emb_height=@Emb_Height.xlsx" -F "pavement_input=@Pavement_Input.xlsx" http://localhost:5000/api/upload-files'
+                'required_fields': [
+                    'category_id (string) - Unique identifier for the category',
+                    'category_name (string) - Name of the category'
+                ],
+                'optional_fields': [
+                    'project_name (string)',
+                    'project_id (string)'
+                ],
+                'usage': 'curl -X POST -F "tcs_schedule=@TCS_Schedule.xlsx" -F "tcs_input=@TCS_Input.xlsx" -F "emb_height=@Emb_Height.xlsx" -F "pavement_input=@Pavement_Input.xlsx" -F "category_id=CAT001" -F "category_name=Highway Projects" http://localhost:5000/api/upload-files'
             },
             'execute_calculation': {
                 'method': 'POST',
@@ -1913,9 +1953,10 @@ def root():
                     'limit': 'integer (optional, default: 10, max: 100)',
                     'search': 'string (optional, searches in session_id and project_name)',
                     'status': 'string (optional, filters by status)',
-                    'project_id': 'string (optional, filters by project_id)'
+                    'project_id': 'string (optional, filters by project_id)',
+                    'category_id': 'string (optional, filters by category_id)'
                 },
-                'usage': 'curl -X GET "http://localhost:5000/api/sessions?page=1&limit=10&search=project_name"'
+                'usage': 'curl -X GET "http://localhost:5000/api/sessions?page=1&limit=10&search=project_name&category_id=CAT001"'
             },
             'session_status': {
                 'method': 'GET',

@@ -27,7 +27,7 @@ class SessionManager:
         """Generate session ID in format YYYYMMDD_HHMMSS"""
         return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     
-    def create_session(self, session_id=None, project_name=None, project_id=None):
+    def create_session(self, session_id=None, project_name=None, project_id=None, category_id=None, category_name=None):
         """Create new session - generates session_id if not provided"""
         if session_id is None:
             session_id = self.generate_session_id()
@@ -36,6 +36,8 @@ class SessionManager:
             'session_id': session_id,
             'project_name': project_name,
             'project_id': project_id,
+            'category_id': category_id,
+            'category_name': category_name,
             'status': 'uploaded',
             'created_at': datetime.now(timezone.utc).isoformat(),
             'updated_at': datetime.now(timezone.utc).isoformat(),
@@ -163,7 +165,7 @@ class SessionManager:
         result = self.sessions.delete_one({'session_id': session_id})
         return result.deleted_count > 0
     
-    def get_all_sessions(self, limit=10, skip=0, sort_by='session_id', sort_order=-1, status_filter=None, search_filter=None, project_id_filter=None):
+    def get_all_sessions(self, limit=10, skip=0, sort_by='session_id', sort_order=-1, status_filter=None, search_filter=None, project_id_filter=None, category_id_filter=None):
         """
         Get all sessions with pagination and filtering
         
@@ -175,6 +177,7 @@ class SessionManager:
             status_filter: Filter by status (optional)
             search_filter: Search in session_id and project_name (optional)
             project_id_filter: Filter by project_id (optional)
+            category_id_filter: Filter by category_id (optional)
         
         Returns:
             List of sessions and total count
@@ -187,6 +190,9 @@ class SessionManager:
             
         if project_id_filter:
             query_filter['project_id'] = project_id_filter
+        
+        if category_id_filter:
+            query_filter['category_id'] = category_id_filter
         
         if search_filter:
             # Search in both session_id and project_name
@@ -234,6 +240,8 @@ class SessionManager:
                 'session_id': session['session_id'],
                 'project_name': session.get('project_name'),
                 'project_id': session.get('project_id'),
+                'category_id': session.get('category_id'),
+                'category_name': session.get('category_name'),
                 'status': session['status'],
                 'created_at': session.get('created_at'),
                 'updated_at': session.get('updated_at'),
