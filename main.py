@@ -847,6 +847,8 @@ def upload_files():
             'session_id': session_id,
             'project_name': project_name,
             'project_id': project_id_val,
+            'category_id': category_id,
+            'category_name': category_name,
             'uploaded_files': uploaded_files,
             'gcs_bucket': os.getenv('GCS_BUCKET_NAME'),
             'next_step': 'Call /api/execute-calculation with this session_id to start processing'
